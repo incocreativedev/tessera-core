@@ -156,6 +156,38 @@ class ConvModel(nn.Module):
         return self.head(x)
 
 
+class LSTMModel(nn.Module):
+    """Bidirectional LSTM with mean pooling."""
+
+    arch_type = "lstm"
+
+    def __init__(self, d_model: int, num_layers: int, vocab_size: int = 256,
+                 num_classes: int = 2):
+        super().__init__()
+        self.d_model = d_model
+        self.num_layers = num_layers
+        self.embedding = nn.Embedding(vocab_size, d_model)
+
+        # LSTM hidden size = d_model // 2 so bidirectional output = d_model
+        self.lstm = nn.LSTM(
+            input_size=d_model,
+            hidden_size=d_model // 2,
+            num_layers=num_layers,
+            batch_first=True,
+            bidirectional=True,
+            dropout=0.0,
+        )
+
+        self.layers = nn.ModuleList([self.lstm])  # Expose for fingerprinting
+        self.head = nn.Linear(d_model, num_classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.embedding(x)       # (batch, seq, d)
+        x, _ = self.lstm(x)         # (batch, seq, d) — bidirectional
+        x = x.mean(dim=1)           # Mean pool → (batch, d)
+        return self.head(x)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Data Factory
 # ═══════════════════════════════════════════════════════════════════════
@@ -243,6 +275,7 @@ ARCH_FACTORY = {
     "transformer": TransformerModel,
     "mlp": MLPModel,
     "conv": ConvModel,
+    "lstm": LSTMModel,
 }
 
 
@@ -253,7 +286,7 @@ def define_model_configs():
     Each config is (name, arch_type, d_model, num_layers).
     """
     configs = []
-    for arch in ["transformer", "mlp", "conv"]:
+    for arch in ["transformer", "mlp", "conv", "lstm"]:
         for d in [64, 128, 256]:
             for L in [2, 4, 6]:
                 name = f"{arch}_{d}d_{L}L"
@@ -262,12 +295,13 @@ def define_model_configs():
 
 
 def define_quick_configs():
-    """Minimal config set for smoke-testing."""
+    """Minimal config set for smoke-testing across all 4 families."""
     return [
         ("transformer_64d_2L",  "transformer", 64,  2),
         ("transformer_128d_4L", "transformer", 128, 4),
         ("mlp_128d_4L",         "mlp",         128, 4),
         ("conv_64d_2L",         "conv",        64,  2),
+        ("lstm_64d_2L",         "lstm",        64,  2),
     ]
 
 
