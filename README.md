@@ -103,6 +103,45 @@ python benchmarks/cross_arch_benchmark.py --quick   # smoke test (4 configs, ~1 
 
 Results are written to `benchmarks/results/` as JSON and an HTML dashboard.
 
+## Configuring the hub dimension
+
+The Universal Hub Space defaults to **2048 dimensions** — the smallest power-of-two that exceeds the maximum intrinsic dimensionality observed across a wide range of model architectures in our testing. This means most models can be faithfully represented in the hub without information loss.
+
+**When to change it:**
+
+| Model d_model | Recommended hub_dim | Rationale |
+|---------------|--------------------:|-----------|
+| ≤ 512 | 2048 (default) | Hub is already 4× larger than model width |
+| 512 – 2048 | 4096 | Prevents information bottleneck in wider models |
+| > 2048 | 8192 | Wide models need proportionally wider hub |
+
+**Tradeoffs:**
+
+| | Smaller hub (1024) | Default (2048) | Larger hub (4096+) |
+|-|:--:|:--:|:--:|
+| UHS training speed | Faster | Baseline | Slower |
+| Memory usage | Lower | Baseline | Higher |
+| Token file size | Smaller | Baseline | Larger |
+| Fidelity (narrow models) | Good | Excellent | Excellent |
+| Fidelity (wide models) | Lossy | Good | Excellent |
+
+**How to set it:**
+
+```python
+# Via ModeATransfer (recommended)
+transfer = ModeATransfer(
+    transmitter=trained_model,
+    receiver=untrained_model,
+    hub_dim=4096,  # override default
+)
+
+# Or directly when creating a UniversalHubSpace
+from tessera import UniversalHubSpace
+uhs = UniversalHubSpace(d_model=1024, hub_dim=4096)
+```
+
+**How to tell if your hub dimension is too small:** watch the UHS round-trip error logged during `transfer.execute()`. If it exceeds **0.5** for either model, the hub is likely too small to represent that model's activation space faithfully. Increase `hub_dim` and re-run.
+
 ## When transfer goes wrong
 
 If you're seeing poor transfer quality, here's what to check, in priority order:

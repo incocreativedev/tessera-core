@@ -78,3 +78,21 @@ class TestModeATransfer:
 
         assert token.privacy_epsilon == 4.0
         assert token.privacy_delta == 1e-6
+
+    def test_custom_hub_dim(self, train_loader, val_loader):
+        """Hub dimension should be configurable and reflected in token vector size."""
+        tx = SmallTransformer(d_model=64, num_layers=2)
+        rx = SmallTransformer(d_model=64, num_layers=2)
+        tx.eval()
+
+        transfer = ModeATransfer(tx, rx, "tx", "rx", hub_dim=1024)
+        token = transfer.execute(
+            train_dataloader=train_loader,
+            val_dataloader=val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
+        )
+
+        assert isinstance(token, TesseraToken)
+        assert len(token.uhs_vector) == 1024
+        assert transfer.hub_dim == 1024

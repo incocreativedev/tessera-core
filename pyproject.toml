@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=45", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "tessera-core"
@@ -32,21 +32,35 @@ dependencies = [
     "msgpack>=1.0.0",
 ]
 
+[project.scripts]
+tessera = "tessera.cli:main"
+tessera-mcp = "tessera.mcp_server:main"
+
 [project.optional-dependencies]
+mcp = [
+    "mcp[cli]>=1.0.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "pytest-asyncio>=0.21.0",
     "black>=22.0",
     "mypy>=0.990",
     "ruff>=0.1.0",
 ]
+all = [
+    "tessera-core[dev,mcp]",
+]
 
 [project.urls]
-Homepage = "https://github.com/incocreative/tessera-core"
-Documentation = "https://github.com/incocreative/tessera-core#readme"
-Repository = "https://github.com/incocreative/tessera-core"
-Issues = "https://github.com/incocreative/tessera-core/issues"
-Changelog = "https://github.com/incocreative/tessera-core/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/incocreativedev/tessera-core"
+Documentation = "https://github.com/incocreativedev/tessera-core#readme"
+Repository = "https://github.com/incocreativedev/tessera-core"
+Issues = "https://github.com/incocreativedev/tessera-core/issues"
+Changelog = "https://github.com/incocreativedev/tessera-core/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+packages = ["tessera"]
 
 [tool.black]
 line-length = 100

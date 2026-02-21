@@ -63,12 +63,26 @@ class ModeATransfer:
         transmitter_id: str = "transmitter",
         receiver_id: str = "receiver",
         device: str = "cpu",
+        hub_dim: int = 2048,
     ):
+        """
+        Args:
+            transmitter: Trained source model.
+            receiver: Target model to receive knowledge.
+            transmitter_id: Unique identifier for the transmitter.
+            receiver_id: Unique identifier for the receiver.
+            device: Torch device ("cpu", "cuda", etc.).
+            hub_dim: Dimensionality of the Universal Hub Space. Default 2048.
+                     Increase to 4096 for models with d_model > 512, or 8192
+                     for very wide models. Monitor UHS round-trip error — if
+                     it exceeds 0.5, the hub dimension is likely too small.
+        """
         self.transmitter = transmitter
         self.receiver = receiver
         self.transmitter_id = transmitter_id
         self.receiver_id = receiver_id
         self.device = device
+        self.hub_dim = hub_dim
 
         # Populated during transfer
         self.tx_fingerprints: Optional[Dict[str, LayerFingerprint]] = None
@@ -144,7 +158,7 @@ class ModeATransfer:
         # ── Step 3: Train UHS encoder/decoder for transmitter ────────────
         logger.info("[Step 3/7] Training transmitter UHS encoder/decoder...")
 
-        self.tx_uhs = UniversalHubSpace(tx_d, device=self.device)
+        self.tx_uhs = UniversalHubSpace(tx_d, hub_dim=self.hub_dim, device=self.device)
         tx_act_loader = DataLoader(
             TensorDataset(torch.tensor(tx_pooled, dtype=torch.float32)),
             batch_size=32, shuffle=True,
@@ -159,7 +173,7 @@ class ModeATransfer:
         # ── Step 4: Train UHS encoder/decoder for receiver ───────────────
         logger.info("[Step 4/7] Training receiver UHS encoder/decoder...")
 
-        self.rx_uhs = UniversalHubSpace(rx_d, device=self.device)
+        self.rx_uhs = UniversalHubSpace(rx_d, hub_dim=self.hub_dim, device=self.device)
         rx_act_loader = DataLoader(
             TensorDataset(torch.tensor(rx_pooled, dtype=torch.float32)),
             batch_size=32, shuffle=True,
