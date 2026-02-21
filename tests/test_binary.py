@@ -5,8 +5,14 @@ import struct
 import pytest
 import numpy as np
 from tessera.binary import (
-    TBFSerializer, QuantType, MAGIC, HEADER_SIZE, TRAILER_SIZE,
-    _quantise, _dequantise, _crc32c,
+    TBFSerializer,
+    QuantType,
+    MAGIC,
+    HEADER_SIZE,
+    TRAILER_SIZE,
+    _quantise,
+    _dequantise,
+    _crc32c,
 )
 from tessera.token import TesseraToken, KnowledgeType
 
@@ -137,6 +143,7 @@ class TestTBFSerializer:
 
     def test_detect_format_legacy(self, tmp_dir):
         from tessera.token import TokenSerializer
+
         token = make_token(dim=64)
         path = os.path.join(tmp_dir, "detect.safetensors")
         TokenSerializer.save_token(token, path)

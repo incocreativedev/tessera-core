@@ -130,8 +130,9 @@ class AnchorRegistry:
             KeyError: If anchor_id is not registered.
         """
         if anchor_id not in self._index["anchors"]:
-            raise KeyError(f"Anchor '{anchor_id}' not found in registry. "
-                           f"Available: {self.list()}")
+            raise KeyError(
+                f"Anchor '{anchor_id}' not found in registry. " f"Available: {self.list()}"
+            )
 
         info = self._index["anchors"][anchor_id]
         anchor_dir = Path(info["path"])

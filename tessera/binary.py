@@ -48,22 +48,23 @@ logger = setup_logging("tessera.binary")
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-MAGIC = b"TBF1"                  # 4 bytes: 0x54 0x42 0x46 0x31
+MAGIC = b"TBF1"  # 4 bytes: 0x54 0x42 0x46 0x31
 FORMAT_VERSION_MAJOR = 1
 FORMAT_VERSION_MINOR = 1
-HEADER_SIZE = 32                 # Fixed header length
-VECTOR_ALIGNMENT = 64            # Payload aligned to 64 bytes
-TRAILER_SIZE = 36                # 32-byte HMAC-SHA256 + 4-byte CRC-32C
+HEADER_SIZE = 32  # Fixed header length
+VECTOR_ALIGNMENT = 64  # Payload aligned to 64 bytes
+TRAILER_SIZE = 36  # 32-byte HMAC-SHA256 + 4-byte CRC-32C
 MIME_TYPE = "application/vnd.tessera.token+binary"
 FILE_EXTENSION = ".tbf"
 
 
 class QuantType(IntEnum):
     """Quantisation type for the vector payload."""
-    FLOAT32 = 0     # 4 bytes per element, baseline
-    FLOAT16 = 1     # 2 bytes per element, ~50% size
-    BFLOAT16 = 2    # 2 bytes per element, ~50% size, better dynamic range
-    INT8 = 3        # 1 byte per element, ~25% size (requires scale/zero-point)
+
+    FLOAT32 = 0  # 4 bytes per element, baseline
+    FLOAT16 = 1  # 2 bytes per element, ~50% size
+    BFLOAT16 = 2  # 2 bytes per element, ~50% size, better dynamic range
+    INT8 = 3  # 1 byte per element, ~25% size (requires scale/zero-point)
 
 
 # Bytes per element for each quantisation type
@@ -108,6 +109,7 @@ FLAG_COMPRESSED = 0x02
 
 # ── CRC-32C ──────────────────────────────────────────────────────────────────
 
+
 def _crc32c(data: bytes) -> int:
     """
     Compute CRC-32C (Castagnoli).
@@ -117,14 +119,17 @@ def _crc32c(data: bytes) -> int:
     """
     try:
         import crc32c
+
         return crc32c.crc32c(data)
     except ImportError:
         # Fallback: standard CRC-32 (not Castagnoli, but functional)
         import binascii
+
         return binascii.crc32(data) & 0xFFFFFFFF
 
 
 # ── Quantisation Helpers ─────────────────────────────────────────────────────
+
 
 def _quantise(vector: np.ndarray, quant: QuantType) -> tuple:
     """
@@ -167,9 +172,7 @@ def _quantise(vector: np.ndarray, quant: QuantType) -> tuple:
             scale = (vmax - vmin) / 255.0
             zero_point = int(round(-vmin / scale)) - 128
 
-        quantised = np.clip(
-            np.round(vector / scale) + zero_point, -128, 127
-        ).astype(np.int8)
+        quantised = np.clip(np.round(vector / scale) + zero_point, -128, 127).astype(np.int8)
         return quantised.tobytes(), scale, zero_point
 
     else:
@@ -189,9 +192,7 @@ def _dequantise(
         return np.frombuffer(payload, dtype=np.float32, count=n_elements).copy()
 
     elif quant == QuantType.FLOAT16:
-        return np.frombuffer(
-            payload, dtype=np.float16, count=n_elements
-        ).astype(np.float32).copy()
+        return np.frombuffer(payload, dtype=np.float16, count=n_elements).astype(np.float32).copy()
 
     elif quant == QuantType.BFLOAT16:
         bf16 = np.frombuffer(payload, dtype=np.uint16, count=n_elements)
@@ -211,6 +212,7 @@ def _dequantise(
 
 # ── Metadata Encoding ────────────────────────────────────────────────────────
 
+
 def _token_to_metadata(token: TesseraToken) -> dict:
     """
     Convert a TesseraToken to the MessagePack-serialisable metadata dict.
@@ -218,20 +220,20 @@ def _token_to_metadata(token: TesseraToken) -> dict:
     The UHS vector is NOT included — it goes in the vector payload section.
     """
     return {
-        "t": token.knowledge_type.value,           # knowledge type
-        "m": token.modality_weights,                # modality weights
-        "c": token.correlation_map,                 # correlation map
-        "l": token.lineage_dag,                     # lineage DAG
-        "g": token.generation,                      # generation count
-        "proj": token.projection_hints,             # projection hints
-        "pe": token.privacy_epsilon,                # privacy ε
-        "pd": token.privacy_delta,                  # privacy δ
-        "d": token.drift_score,                     # drift score
-        "src": token.source_model_id,               # source model ID
-        "tgt": token.target_model_id,               # target model ID
-        "ts": token.timestamp,                      # ISO 8601 timestamp
-        "v": token.version,                         # protocol version
-        "x": token.custom_metadata,                 # extensible metadata
+        "t": token.knowledge_type.value,  # knowledge type
+        "m": token.modality_weights,  # modality weights
+        "c": token.correlation_map,  # correlation map
+        "l": token.lineage_dag,  # lineage DAG
+        "g": token.generation,  # generation count
+        "proj": token.projection_hints,  # projection hints
+        "pe": token.privacy_epsilon,  # privacy ε
+        "pd": token.privacy_delta,  # privacy δ
+        "d": token.drift_score,  # drift score
+        "src": token.source_model_id,  # source model ID
+        "tgt": token.target_model_id,  # target model ID
+        "ts": token.timestamp,  # ISO 8601 timestamp
+        "v": token.version,  # protocol version
+        "x": token.custom_metadata,  # extensible metadata
     }
 
 
@@ -257,6 +259,7 @@ def _metadata_to_token(meta: dict, uhs_vector: list) -> TesseraToken:
 
 
 # ── TBFSerializer ────────────────────────────────────────────────────────────
+
 
 class TBFSerializer:
     """
@@ -317,7 +320,9 @@ class TBFSerializer:
 
         # ── 3. Compute padding to 64-byte alignment ─────────────────────
         content_before_payload = HEADER_SIZE + meta_len
-        padding_needed = (VECTOR_ALIGNMENT - (content_before_payload % VECTOR_ALIGNMENT)) % VECTOR_ALIGNMENT
+        padding_needed = (
+            VECTOR_ALIGNMENT - (content_before_payload % VECTOR_ALIGNMENT)
+        ) % VECTOR_ALIGNMENT
         padding = b"\x00" * padding_needed
 
         # ── 4. Build header ──────────────────────────────────────────────
@@ -407,21 +412,26 @@ class TBFSerializer:
         raw = filepath.read_bytes()
 
         if len(raw) < HEADER_SIZE + TRAILER_SIZE:
-            raise ValueError(
-                f"File too small ({len(raw)} bytes) to be a valid TBF file"
-            )
+            raise ValueError(f"File too small ({len(raw)} bytes) to be a valid TBF file")
 
         # ── 1. Parse header ──────────────────────────────────────────────
         header_data = HEADER_STRUCT.unpack(raw[:HEADER_SIZE])
         (
-            magic, ver_major, ver_minor, flags, quant_type,
-            meta_len, vec_count, vec_byte_len, header_crc, reserved,
+            magic,
+            ver_major,
+            ver_minor,
+            flags,
+            quant_type,
+            meta_len,
+            vec_count,
+            vec_byte_len,
+            header_crc,
+            reserved,
         ) = header_data
 
         if magic != MAGIC:
             raise ValueError(
-                f"Invalid magic bytes: {magic!r} (expected {MAGIC!r}). "
-                "Not a TBF file."
+                f"Invalid magic bytes: {magic!r} (expected {MAGIC!r}). " "Not a TBF file."
             )
 
         if ver_major > FORMAT_VERSION_MAJOR:
@@ -449,7 +459,9 @@ class TBFSerializer:
 
         # Padding to alignment
         content_before_payload = HEADER_SIZE + meta_len
-        padding_needed = (VECTOR_ALIGNMENT - (content_before_payload % VECTOR_ALIGNMENT)) % VECTOR_ALIGNMENT
+        padding_needed = (
+            VECTOR_ALIGNMENT - (content_before_payload % VECTOR_ALIGNMENT)
+        ) % VECTOR_ALIGNMENT
 
         vec_start = meta_end + padding_needed
         vec_end = vec_start + vec_byte_len
@@ -474,8 +486,7 @@ class TBFSerializer:
             computed_crc = _crc32c(file_body)
             if file_crc != computed_crc:
                 raise ValueError(
-                    f"Body CRC mismatch: got {file_crc:#010x}, "
-                    f"expected {computed_crc:#010x}"
+                    f"Body CRC mismatch: got {file_crc:#010x}, " f"expected {computed_crc:#010x}"
                 )
 
         if has_hmac and hmac_key is not None:
@@ -488,14 +499,12 @@ class TBFSerializer:
         meta = msgpack.unpackb(meta_bytes, raw=False)
 
         # ── 5. Decode vector payload ─────────────────────────────────────
-        vec_bytes = raw[vec_start:vec_start + vec_byte_len]
+        vec_bytes = raw[vec_start : vec_start + vec_byte_len]
 
         scale = meta.pop("_q_scale", None)
         zero_point = meta.pop("_q_zp", None)
 
-        uhs_vector = _dequantise(
-            vec_bytes, vec_count, quant, scale, zero_point
-        ).tolist()
+        uhs_vector = _dequantise(vec_bytes, vec_count, quant, scale, zero_point).tolist()
 
         # ── 6. Reconstruct token ─────────────────────────────────────────
         token = _metadata_to_token(meta, uhs_vector)
@@ -546,8 +555,16 @@ class TBFSerializer:
 
         header_data = HEADER_STRUCT.unpack(raw[:HEADER_SIZE])
         (
-            magic, ver_major, ver_minor, flags, quant_type,
-            meta_len, vec_count, vec_byte_len, header_crc, _reserved,
+            magic,
+            ver_major,
+            ver_minor,
+            flags,
+            quant_type,
+            meta_len,
+            vec_count,
+            vec_byte_len,
+            header_crc,
+            _reserved,
         ) = header_data
 
         quant = QuantType(quant_type)

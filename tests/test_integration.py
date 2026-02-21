@@ -4,10 +4,17 @@ import os
 import torch
 import numpy as np
 from tessera import (
-    ModeATransfer, TesseraToken, TokenSerializer,
-    TBFSerializer, QuantType, DriftMeasure,
-    ActivationFingerprint, compute_fingerprints,
-    DifferentialPrivacy, ProjectionType, ProjectionHint,
+    ModeATransfer,
+    TesseraToken,
+    TokenSerializer,
+    TBFSerializer,
+    QuantType,
+    DriftMeasure,
+    ActivationFingerprint,
+    compute_fingerprints,
+    DifferentialPrivacy,
+    ProjectionType,
+    ProjectionHint,
     AnchorRegistry,
 )
 from tests.conftest import SmallTransformer
@@ -18,10 +25,12 @@ class TestPublicAPI:
 
     def test_all_exports(self):
         import tessera
+
         assert len(tessera.__all__) == 17
 
     def test_version(self):
         import tessera
+
         assert tessera.__version__ == "0.1.0"
 
 
@@ -104,6 +113,7 @@ class TestQuantisationPipeline:
 
     def test_all_quant_types(self, tmp_dir):
         from tests.test_binary import make_token
+
         token = make_token(dim=512)
 
         for quant in QuantType:

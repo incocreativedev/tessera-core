@@ -205,7 +205,7 @@ class UniversalHubSpace:
                 half = len(batch) // 2
                 if half < 2:
                     continue  # Need at least 2 pairs
-                z_i, z_j = z[:half], z[half: 2 * half]
+                z_i, z_j = z[:half], z[half : 2 * half]
                 cl = info_nce_loss(z_i, z_j, temperature)
 
                 # Reconstruction loss

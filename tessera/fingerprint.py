@@ -42,10 +42,10 @@ class LayerFingerprint:
     variance: np.ndarray
 
     # Principal components — eigenvectors of the covariance matrix
-    pca_top5: np.ndarray        # shape: (5, d_layer)
-    pca_top5_ev: np.ndarray     # shape: (5,) — eigenvalues
-    pca_top10: np.ndarray       # shape: (10, d_layer)
-    pca_top10_ev: np.ndarray    # shape: (10,) — eigenvalues
+    pca_top5: np.ndarray  # shape: (5, d_layer)
+    pca_top5_ev: np.ndarray  # shape: (5,) — eigenvalues
+    pca_top10: np.ndarray  # shape: (10, d_layer)
+    pca_top10_ev: np.ndarray  # shape: (10,) — eigenvalues
 
     # Intrinsic dimensionality: (Σλ)² / Σλ²
     intrinsic_dim: float
@@ -126,6 +126,7 @@ class ActivationFingerprint:
 
     def _make_hook(self, layer_name: str):
         """Create a hook function that stores activations for a named layer."""
+
         def hook_fn(module, input, output):
             # Handle various output types
             if isinstance(output, tuple):
@@ -201,9 +202,7 @@ class ActivationFingerprint:
         self._activations.clear()
         return fingerprints
 
-    def _compute_stats(
-        self, H: np.ndarray, layer_name: str, layer_idx: int
-    ) -> LayerFingerprint:
+    def _compute_stats(self, H: np.ndarray, layer_name: str, layer_idx: int) -> LayerFingerprint:
         """
         Compute statistics from collected activations.
 
@@ -228,6 +227,7 @@ class ActivationFingerprint:
         # Use scipy for stable eigendecomposition of symmetric matrix
         try:
             from scipy.linalg import eigh
+
             eigenvalues, eigenvectors = eigh(cov)
         except ImportError:
             eigenvalues, eigenvectors = np.linalg.eigh(cov)
@@ -243,15 +243,15 @@ class ActivationFingerprint:
         # Top-k PCA
         k5 = min(5, d)
         k10 = min(10, d)
-        pca_top5 = eigenvectors[:, :k5].T       # (k5, d)
+        pca_top5 = eigenvectors[:, :k5].T  # (k5, d)
         pca_top5_ev = eigenvalues[:k5]
-        pca_top10 = eigenvectors[:, :k10].T      # (k10, d)
+        pca_top10 = eigenvectors[:, :k10].T  # (k10, d)
         pca_top10_ev = eigenvalues[:k10]
 
         # Intrinsic dimensionality: participation ratio
         ev_sum = eigenvalues.sum()
-        ev_sq_sum = (eigenvalues ** 2).sum()
-        intrinsic_dim = (ev_sum ** 2) / ev_sq_sum if ev_sq_sum > 0 else 0.0
+        ev_sq_sum = (eigenvalues**2).sum()
+        intrinsic_dim = (ev_sum**2) / ev_sq_sum if ev_sq_sum > 0 else 0.0
 
         return LayerFingerprint(
             layer_name=layer_name,

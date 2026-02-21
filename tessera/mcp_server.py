@@ -26,8 +26,7 @@ try:
     from mcp.types import Tool, TextContent
 except ImportError:
     print(
-        "MCP server requires the 'mcp' package.\n"
-        "Install with: pip install 'tessera-core[mcp]'"
+        "MCP server requires the 'mcp' package.\n" "Install with: pip install 'tessera-core[mcp]'"
     )
     sys.exit(1)
 
@@ -137,6 +136,7 @@ async def list_tools() -> list[Tool]:
 
 # ── Tool implementations ─────────────────────────────────────────────────────
 
+
 def _handle_inspect(arguments: dict) -> str:
     """Inspect a TBF token file."""
     filepath = arguments["filepath"]
@@ -177,9 +177,7 @@ def _handle_validate(arguments: dict) -> str:
         hmac_key = bytes.fromhex(hmac_key_hex)
 
     try:
-        token = TBFSerializer.load(
-            filepath, hmac_key=hmac_key, verify_crc=True
-        )
+        token = TBFSerializer.load(filepath, hmac_key=hmac_key, verify_crc=True)
         result = {
             "valid": True,
             "source": token.source_model_id,
@@ -204,10 +202,12 @@ def _handle_list_anchors(arguments: dict) -> str:
     anchors = []
     for anchor_id in registry.list():
         info = registry.info(anchor_id)
-        anchors.append({
-            "anchor_id": anchor_id,
-            **info,
-        })
+        anchors.append(
+            {
+                "anchor_id": anchor_id,
+                **info,
+            }
+        )
 
     return json.dumps(anchors, indent=2)
 
@@ -220,6 +220,7 @@ def _handle_info(arguments: dict) -> str:
     cuda_available = False
     try:
         import torch
+
         torch_version = torch.__version__
         cuda_available = torch.cuda.is_available()
     except ImportError:
@@ -266,6 +267,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
+
 
 async def run():
     """Start the MCP server with stdio transport."""

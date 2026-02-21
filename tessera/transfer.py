@@ -144,12 +144,8 @@ class ModeATransfer:
         # ── Step 2: Collect raw activations for UHS training ─────────────
         logger.info("[Step 2/7] Collecting activations for UHS training...")
 
-        tx_acts = self._collect_activations(
-            self.transmitter, train_dataloader, tx_layer_names
-        )
-        rx_acts = self._collect_activations(
-            self.receiver, train_dataloader, rx_layer_names
-        )
+        tx_acts = self._collect_activations(self.transmitter, train_dataloader, tx_layer_names)
+        rx_acts = self._collect_activations(self.receiver, train_dataloader, rx_layer_names)
 
         # Aggregate across layers: average activation per sample
         tx_pooled = self._pool_activations(tx_acts, tx_layer_names)
@@ -161,7 +157,8 @@ class ModeATransfer:
         self.tx_uhs = UniversalHubSpace(tx_d, hub_dim=self.hub_dim, device=self.device)
         tx_act_loader = DataLoader(
             TensorDataset(torch.tensor(tx_pooled, dtype=torch.float32)),
-            batch_size=32, shuffle=True,
+            batch_size=32,
+            shuffle=True,
         )
         self.tx_uhs.train(tx_act_loader, epochs=uhs_epochs, verbose=True)
 
@@ -176,7 +173,8 @@ class ModeATransfer:
         self.rx_uhs = UniversalHubSpace(rx_d, hub_dim=self.hub_dim, device=self.device)
         rx_act_loader = DataLoader(
             TensorDataset(torch.tensor(rx_pooled, dtype=torch.float32)),
-            batch_size=32, shuffle=True,
+            batch_size=32,
+            shuffle=True,
         )
         self.rx_uhs.train(rx_act_loader, epochs=uhs_epochs, verbose=True)
 
@@ -210,9 +208,7 @@ class ModeATransfer:
         # ── Step 7: Measure drift and package token ────────────────
         logger.info("[Step 7/7] Measuring drift and creating token...")
 
-        drift = DriftMeasure(
-            self.transmitter, self.receiver, self.device
-        ).compute(val_dataloader)
+        drift = DriftMeasure(self.transmitter, self.receiver, self.device).compute(val_dataloader)
 
         # Apply differential privacy to the hub vector
         dp = DifferentialPrivacy(privacy_epsilon, privacy_delta)
@@ -279,6 +275,7 @@ class ModeATransfer:
                 if out.ndim == 3:
                     out = out.mean(dim=1)  # Pool over sequence
                 activations[name].append(out)
+
             return fn
 
         for name, module in model.named_modules():
@@ -296,9 +293,7 @@ class ModeATransfer:
             h.remove()
         return activations
 
-    def _pool_activations(
-        self, acts: Dict[str, list], layer_names: List[str]
-    ) -> np.ndarray:
+    def _pool_activations(self, acts: Dict[str, list], layer_names: List[str]) -> np.ndarray:
         """
         Pool activations across layers into a single matrix.
 
@@ -359,7 +354,7 @@ class ModeATransfer:
                 if sample_idx + batch_size > len(targets):
                     break
 
-                batch_targets = targets[sample_idx: sample_idx + batch_size]
+                batch_targets = targets[sample_idx : sample_idx + batch_size]
                 sample_idx += batch_size
 
                 # Forward pass with hook to capture activations
@@ -393,9 +388,7 @@ class ModeATransfer:
 
                 if act.shape[-1] != tgt.shape[-1]:
                     # Simple linear projection for dimension mismatch
-                    tgt = F.adaptive_avg_pool1d(
-                        tgt.unsqueeze(1), act.shape[-1]
-                    ).squeeze(1)
+                    tgt = F.adaptive_avg_pool1d(tgt.unsqueeze(1), act.shape[-1]).squeeze(1)
 
                 loss = F.mse_loss(act, tgt)
 

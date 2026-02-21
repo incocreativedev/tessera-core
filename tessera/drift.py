@@ -139,6 +139,7 @@ class DriftMeasure:
                 if act.ndim >= 2:
                     act = act.reshape(-1, act.shape[-1])
                 activations[layer_name].append(act.numpy())
+
             return hook_fn
 
         for name, module in model.named_modules():

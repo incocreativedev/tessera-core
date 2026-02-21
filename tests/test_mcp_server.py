@@ -25,6 +25,7 @@ pytestmark = pytest.mark.skipif(
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _make_token(dim=2048):
     """Create a minimal TesseraToken for testing."""
     vec = np.random.randn(dim).astype(np.float32).tolist()
@@ -74,21 +75,25 @@ if mcp_installed:
 
 # ── Test: module imports ─────────────────────────────────────────────────────
 
+
 class TestModuleImport:
     def test_import_succeeds(self):
         """The mcp_server module should import without error when mcp is installed."""
         import tessera.mcp_server  # noqa: F811
+
         assert hasattr(tessera.mcp_server, "app")
         assert hasattr(tessera.mcp_server, "main")
 
     def test_has_tool_handlers(self):
         """All expected handler functions should exist."""
         from tessera.mcp_server import _HANDLERS
+
         expected = {"tessera_inspect", "tessera_validate", "tessera_list_anchors", "tessera_info"}
         assert set(_HANDLERS.keys()) == expected
 
 
 # ── Test: tessera_inspect ────────────────────────────────────────────────────
+
 
 class TestInspect:
     def test_inspect_header(self, tbf_file):
@@ -123,6 +128,7 @@ class TestInspect:
 
 
 # ── Test: tessera_validate ───────────────────────────────────────────────────
+
 
 class TestValidate:
     def test_validate_valid_file(self, tbf_file):
@@ -166,10 +172,12 @@ class TestValidate:
         """Validation with the correct HMAC key should succeed."""
         filepath, _, hmac_key = tbf_file_hmac
         result = json.loads(
-            _handle_validate({
-                "filepath": filepath,
-                "hmac_key": hmac_key.hex(),
-            })
+            _handle_validate(
+                {
+                    "filepath": filepath,
+                    "hmac_key": hmac_key.hex(),
+                }
+            )
         )
         assert result["valid"] is True
 
@@ -177,10 +185,12 @@ class TestValidate:
         """Validation with the wrong HMAC key should fail."""
         filepath, _, _ = tbf_file_hmac
         result = json.loads(
-            _handle_validate({
-                "filepath": filepath,
-                "hmac_key": "00" * 16,  # wrong key
-            })
+            _handle_validate(
+                {
+                    "filepath": filepath,
+                    "hmac_key": "00" * 16,  # wrong key
+                }
+            )
         )
         assert result["valid"] is False
         assert "HMAC" in result["error"]
@@ -188,13 +198,12 @@ class TestValidate:
 
 # ── Test: tessera_list_anchors ───────────────────────────────────────────────
 
+
 class TestListAnchors:
     def test_empty_registry(self, tmp_path):
         """An empty registry should return an empty list."""
         registry_dir = str(tmp_path / "empty_registry")
-        result = json.loads(
-            _handle_list_anchors({"registry_dir": registry_dir})
-        )
+        result = json.loads(_handle_list_anchors({"registry_dir": registry_dir}))
         assert result == []
 
     def test_default_registry_dir(self):
@@ -205,6 +214,7 @@ class TestListAnchors:
 
 
 # ── Test: tessera_info ───────────────────────────────────────────────────────
+
 
 class TestInfo:
     def test_returns_expected_fields(self):
@@ -221,6 +231,7 @@ class TestInfo:
 
 
 # ── Test: call_tool dispatcher ───────────────────────────────────────────────
+
 
 class TestCallTool:
     @pytest.mark.asyncio
@@ -262,6 +273,7 @@ class TestCallTool:
 
 
 # ── Test: list_tools ─────────────────────────────────────────────────────────
+
 
 class TestListTools:
     @pytest.mark.asyncio

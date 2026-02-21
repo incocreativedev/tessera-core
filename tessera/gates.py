@@ -20,11 +20,11 @@ from typing import List
 class ProjectionType(Enum):
     """Projection types for knowledge transformation."""
 
-    ORTHOGONAL = "H"       # Fan-out: dense 1-to-N projection
+    ORTHOGONAL = "H"  # Fan-out: dense 1-to-N projection
     CONDITIONAL = "CONDITIONAL"  # Conditional: gated by fidelity threshold τ
-    SCALING = "P"          # Diagonal scaling (activation magnitude alignment)
-    RESHAPE = "R"          # Low-rank SVD projection (dimensionality change)
-    SWAP = "SWAP"          # Bidirectional exchange through UHS
+    SCALING = "P"  # Diagonal scaling (activation magnitude alignment)
+    RESHAPE = "R"  # Low-rank SVD projection (dimensionality change)
+    SWAP = "SWAP"  # Bidirectional exchange through UHS
 
 
 @dataclass
@@ -37,7 +37,7 @@ class ProjectionHint:
     """
 
     projection_type: ProjectionType
-    strength: float           # 0.0–1.0, importance weight
+    strength: float  # 0.0–1.0, importance weight
     target_layers: List[str]  # Layer names this projection applies to
 
     def to_dict(self) -> dict:

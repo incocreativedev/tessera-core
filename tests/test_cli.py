@@ -28,6 +28,7 @@ class TestInfo:
 
     def test_info_contains_version(self):
         import tessera
+
         result = _run_cli("info")
         assert tessera.__version__ in result.stdout
 
@@ -75,6 +76,7 @@ class TestTransfer:
 class TestVersionFlag:
     def test_version_flag(self):
         import tessera
+
         result = _run_cli("--version")
         assert result.returncode == 0
         assert tessera.__version__ in result.stdout

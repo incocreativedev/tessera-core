@@ -38,16 +38,18 @@ class SmallTransformer(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.embedding = nn.Embedding(vocab_size, d_model)
-        self.layers = nn.ModuleList([
-            nn.TransformerEncoderLayer(
-                d_model=d_model,
-                nhead=max(1, d_model // 32),
-                dim_feedforward=d_model * 2,
-                batch_first=True,
-                dropout=0.0,
-            )
-            for _ in range(num_layers)
-        ])
+        self.layers = nn.ModuleList(
+            [
+                nn.TransformerEncoderLayer(
+                    d_model=d_model,
+                    nhead=max(1, d_model // 32),
+                    dim_feedforward=d_model * 2,
+                    batch_first=True,
+                    dropout=0.0,
+                )
+                for _ in range(num_layers)
+            ]
+        )
         self.head = nn.Linear(d_model, num_classes)
 
     def forward(self, x):

@@ -186,6 +186,7 @@ def _cmd_info(args):
     # PyTorch version
     try:
         import torch
+
         torch_version = torch.__version__
         cuda_available = torch.cuda.is_available()
         cuda_str = f"Yes ({torch.cuda.get_device_name(0)})" if cuda_available else "No"
@@ -228,16 +229,12 @@ def main():
         prog="tessera",
         description="Tessera: activation-based AI-to-AI knowledge transfer toolkit",
     )
-    parser.add_argument(
-        "--version", action="store_true", help="Print version and exit"
-    )
+    parser.add_argument("--version", action="store_true", help="Print version and exit")
 
     subparsers = parser.add_subparsers(dest="command")
 
     # -- inspect ---------------------------------------------------------------
-    p_inspect = subparsers.add_parser(
-        "inspect", help="Inspect a Tessera token file"
-    )
+    p_inspect = subparsers.add_parser("inspect", help="Inspect a Tessera token file")
     p_inspect.add_argument("file", help="Path to .tbf or legacy token file")
     p_inspect.add_argument(
         "--full",
@@ -246,9 +243,7 @@ def main():
     )
 
     # -- validate --------------------------------------------------------------
-    p_validate = subparsers.add_parser(
-        "validate", help="Validate a Tessera token file"
-    )
+    p_validate = subparsers.add_parser("validate", help="Validate a Tessera token file")
     p_validate.add_argument("file", help="Path to .tbf token file")
     p_validate.add_argument(
         "--hmac-key",
@@ -257,9 +252,7 @@ def main():
     )
 
     # -- list-anchors ----------------------------------------------------------
-    p_anchors = subparsers.add_parser(
-        "list-anchors", help="List registered anchor models"
-    )
+    p_anchors = subparsers.add_parser("list-anchors", help="List registered anchor models")
     p_anchors.add_argument(
         "--dir",
         default=None,
@@ -267,9 +260,7 @@ def main():
     )
 
     # -- benchmark -------------------------------------------------------------
-    p_bench = subparsers.add_parser(
-        "benchmark", help="Run cross-architecture benchmark"
-    )
+    p_bench = subparsers.add_parser("benchmark", help="Run cross-architecture benchmark")
     p_bench.add_argument(
         "--quick",
         action="store_true",
@@ -280,15 +271,14 @@ def main():
     subparsers.add_parser("info", help="Print Tessera system information")
 
     # -- transfer --------------------------------------------------------------
-    subparsers.add_parser(
-        "transfer", help="Show transfer API usage guidance"
-    )
+    subparsers.add_parser("transfer", help="Show transfer API usage guidance")
 
     args = parser.parse_args()
 
     # Handle --version at top level
     if args.version:
         import tessera
+
         print(f"tessera {tessera.__version__}")
         return 0
 

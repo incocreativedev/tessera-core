@@ -25,10 +25,10 @@ import numpy as np
 class KnowledgeType(Enum):
     """Type of knowledge encoded in this token."""
 
-    ACTIVATION = "ACTIVATION"   # Mode A: activation fingerprints (primary)
-    WEIGHT = "WEIGHT"           # Mode W: raw parameters (same-anchor only)
-    DATASET = "DATASET"         # Mode D: training data subsets + curriculum
-    BEHAVIOUR = "BEHAVIOUR"     # Mode B: decision boundaries, policies, CoT
+    ACTIVATION = "ACTIVATION"  # Mode A: activation fingerprints (primary)
+    WEIGHT = "WEIGHT"  # Mode W: raw parameters (same-anchor only)
+    DATASET = "DATASET"  # Mode D: training data subsets + curriculum
+    BEHAVIOUR = "BEHAVIOUR"  # Mode B: decision boundaries, policies, CoT
 
 
 @dataclass
@@ -41,15 +41,15 @@ class TesseraToken:
 
     # --- Core payload ---
     knowledge_type: KnowledgeType
-    uhs_vector: List[float]               # 2048-dim hub-space vector
+    uhs_vector: List[float]  # 2048-dim hub-space vector
 
     # --- Activation-based fields ---
     modality_weights: Dict[str, float]  # {basis: amplitude} e.g. {"A": 0.85, "W": 0.12, "B": 0.03}
-    correlation_map: Dict[str, float]     # {token_id: mutual_information}
+    correlation_map: Dict[str, float]  # {token_id: mutual_information}
 
     # --- Lineage ---
-    lineage_dag: dict                      # DAG of model ancestry
-    generation: int = 1                    # Transfer generation count
+    lineage_dag: dict  # DAG of model ancestry
+    generation: int = 1  # Transfer generation count
 
     # --- Gates ---
     projection_hints: List[dict] = field(default_factory=list)
@@ -57,12 +57,14 @@ class TesseraToken:
     # --- Privacy & fidelity ---
     privacy_epsilon: float = 1.0
     privacy_delta: float = 1e-5
-    drift_score: float = 0.0      # KL-divergence (lower = better)
+    drift_score: float = 0.0  # KL-divergence (lower = better)
 
     # --- Provenance ---
     source_model_id: str = ""
     target_model_id: Optional[str] = None
-    timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    timestamp: str = field(
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat()
+    )
     version: str = "1.0"
 
     # --- Extensible metadata ---

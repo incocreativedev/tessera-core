@@ -24,6 +24,7 @@ class TestAnchorRegistry:
         loaded_enc, loaded_dec = reg.load("model_a")
         # Check shapes match
         import torch
+
         x = torch.randn(4, 64)
         out_original = enc(x)
         out_loaded = loaded_enc(x)

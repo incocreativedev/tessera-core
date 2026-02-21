@@ -4,7 +4,9 @@ import torch
 import numpy as np
 from torch.utils.data import DataLoader, TensorDataset
 from tessera.fingerprint import (
-    ActivationFingerprint, LayerFingerprint, compute_fingerprints,
+    ActivationFingerprint,
+    LayerFingerprint,
+    compute_fingerprints,
 )
 from tests.conftest import SmallTransformer
 
@@ -32,11 +34,17 @@ class TestLayerFingerprint:
     def test_cosine_similarity_identical(self):
         d = 16
         fp = LayerFingerprint(
-            layer_name="l", layer_idx=0,
-            mean=np.ones(d), variance=np.ones(d),
-            pca_top5=np.eye(5, d), pca_top5_ev=np.ones(5),
-            pca_top10=np.eye(10, d), pca_top10_ev=np.ones(10),
-            intrinsic_dim=8.0, d_layer=d, token_count=50,
+            layer_name="l",
+            layer_idx=0,
+            mean=np.ones(d),
+            variance=np.ones(d),
+            pca_top5=np.eye(5, d),
+            pca_top5_ev=np.ones(5),
+            pca_top10=np.eye(10, d),
+            pca_top10_ev=np.ones(10),
+            intrinsic_dim=8.0,
+            d_layer=d,
+            token_count=50,
         )
         assert abs(fp.cosine_similarity(fp) - 1.0) < 1e-6
 
