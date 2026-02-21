@@ -19,8 +19,6 @@ from enum import Enum
 from typing import Dict, List, Optional
 from pathlib import Path
 
-import numpy as np
-
 
 class KnowledgeType(Enum):
     """Type of knowledge encoded in this token."""

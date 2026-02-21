@@ -10,9 +10,15 @@ Cumulative budget tracking across multi-token transmissions uses the moments
 accountant (not implemented in this reference; single-token budgets only).
 """
 
+from __future__ import annotations
+
 import math
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import torch
 
 
 class DifferentialPrivacy:
@@ -64,7 +70,7 @@ class DifferentialPrivacy:
         noise = np.random.normal(0.0, self.sigma, size=vector.shape)
         return vector + noise
 
-    def add_noise_tensor(self, tensor) -> "torch.Tensor":
+    def add_noise_tensor(self, tensor) -> torch.Tensor:
         """
         Add calibrated Gaussian noise to a PyTorch tensor.
 

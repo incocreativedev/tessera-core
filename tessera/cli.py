@@ -16,7 +16,6 @@ Usage:
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -42,7 +41,7 @@ def _cmd_inspect(args):
         return 1
 
     if fmt == "legacy":
-        print(f"File format: legacy (SafeTensors + JSON)")
+        print("File format: legacy (SafeTensors + JSON)")
         print("Full inspection of legacy files is not yet supported in the CLI.")
         print("Use the Python API: TokenSerializer.load_token(path)")
         return 0

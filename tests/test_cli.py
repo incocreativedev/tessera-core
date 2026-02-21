@@ -8,8 +8,6 @@ All tests invoke the CLI via subprocess to mirror real usage
 import subprocess
 import sys
 
-import pytest
-
 
 def _run_cli(*args):
     """Run tessera CLI as a subprocess and return the CompletedProcess."""

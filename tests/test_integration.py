@@ -2,19 +2,11 @@
 
 import os
 import torch
-import numpy as np
 from tessera import (
     ModeATransfer,
-    TesseraToken,
     TokenSerializer,
     TBFSerializer,
     QuantType,
-    DriftMeasure,
-    ActivationFingerprint,
-    compute_fingerprints,
-    DifferentialPrivacy,
-    ProjectionType,
-    ProjectionHint,
     AnchorRegistry,
 )
 from tests.conftest import SmallTransformer
@@ -87,7 +79,7 @@ class TestEndToEndPipeline:
         tx.eval()
 
         transfer = ModeATransfer(tx, rx, "tx_64", "rx_128")
-        token = transfer.execute(train_loader, val_loader, uhs_epochs=2, finetune_epochs=1)
+        transfer.execute(train_loader, val_loader, uhs_epochs=2, finetune_epochs=1)
 
         # Register the transmitter's UHS pair
         reg = AnchorRegistry(registry_dir=tmp_dir)

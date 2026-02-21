@@ -1,18 +1,15 @@
 """Tests for tessera.binary — TBF v1.1 serialiser."""
 
 import os
-import struct
+
 import pytest
 import numpy as np
 from tessera.binary import (
     TBFSerializer,
     QuantType,
-    MAGIC,
     HEADER_SIZE,
-    TRAILER_SIZE,
     _quantise,
     _dequantise,
-    _crc32c,
 )
 from tessera.token import TesseraToken, KnowledgeType
 

@@ -1,7 +1,6 @@
 """Tests for tessera.transfer — Mode A transfer orchestrator."""
 
 import torch
-import pytest
 from tessera.transfer import ModeATransfer
 from tessera.token import TesseraToken
 from tests.conftest import SmallTransformer

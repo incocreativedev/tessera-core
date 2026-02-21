@@ -17,7 +17,7 @@ Training loss:
     L = InfoNCE(E_i(A_i), E_j(A_j), temp=0.07) + α × ||D_i(E_i(A_i)) - A_i||²
 """
 
-from typing import Dict, Optional
+from typing import Dict
 
 import torch
 import torch.nn as nn

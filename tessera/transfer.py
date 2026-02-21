@@ -25,7 +25,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
-from .fingerprint import ActivationFingerprint, LayerFingerprint, compute_fingerprints
+from .fingerprint import LayerFingerprint, compute_fingerprints
 from .uhs import UniversalHubSpace
 from .drift import DriftMeasure
 from .privacy import DifferentialPrivacy
@@ -249,7 +249,7 @@ class ModeATransfer:
             },
         )
 
-        logger.info(f"  Transfer complete!")
+        logger.info("  Transfer complete!")
         logger.info(f"  Drift:    {drift:.6f}")
         logger.info(f"  Compatibility:  {compat_score:.4f}")
         logger.info(f"  Privacy:        ε={privacy_epsilon}, δ={privacy_delta}")

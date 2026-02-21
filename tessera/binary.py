@@ -32,7 +32,6 @@ Wire format: little-endian byte order throughout.
 
 import hashlib
 import hmac
-import io
 import struct
 from enum import IntEnum
 from pathlib import Path

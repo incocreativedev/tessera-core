@@ -1,7 +1,6 @@
 """Tests for tessera.token — TesseraToken and TokenSerializer."""
 
 import os
-import pytest
 import numpy as np
 from tessera.token import TesseraToken, KnowledgeType, TokenSerializer
 

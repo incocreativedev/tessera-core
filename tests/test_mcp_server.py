@@ -1,8 +1,6 @@
 """Tests for tessera.mcp_server — MCP tool handlers."""
 
 import json
-import os
-import tempfile
 
 import numpy as np
 import pytest
