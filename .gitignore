@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tessera artefacts
+*.safetensors
+*.tbf
+*.json
+!pyproject.toml
+!.github/**/*.yml
+
+# Benchmark results (regeneratable)
+benchmarks/results/
+
+# Local registry
+.tessera/
