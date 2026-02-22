@@ -10,7 +10,6 @@ Covers:
 
 import json
 import os
-import struct
 import tempfile
 from pathlib import Path
 
@@ -122,10 +121,10 @@ class TestCRIT001PathTraversal:
         # Enumerate all paths created under tmp_dir
         for dirpath, _, filenames in os.walk(tmp_dir):
             resolved = Path(dirpath).resolve()
-            assert str(resolved).startswith(
-                str(anchors_root.resolve())
-            ) or str(resolved) == str(Path(tmp_dir).resolve()) or str(resolved) == str(
-                (Path(tmp_dir) / "anchors").resolve()
+            assert (
+                str(resolved).startswith(str(anchors_root.resolve()))
+                or str(resolved) == str(Path(tmp_dir).resolve())
+                or str(resolved) == str((Path(tmp_dir) / "anchors").resolve())
             ), f"Unexpected path outside anchors_dir: {resolved}"
 
 
@@ -281,9 +280,7 @@ class TestMED002UnboundedRead:
 
         import unittest.mock as mock
 
-        fake_stat = os.stat_result(
-            (0o100644, 0, 0, 1, 0, 0, MAX_TBF_FILE_BYTES + 1, 0, 0, 0)
-        )
+        fake_stat = os.stat_result((0o100644, 0, 0, 1, 0, 0, MAX_TBF_FILE_BYTES + 1, 0, 0, 0))
         with mock.patch("pathlib.Path.stat", return_value=fake_stat):
             with pytest.raises(ValueError, match="too large"):
                 TBFSerializer.info(path)

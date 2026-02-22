@@ -20,6 +20,7 @@ from tessera.credits import (
 
 # ── Quality ─────────────────────────────────────────────────────────────
 
+
 class TestQualityScore:
     def test_deterministic(self):
         assert compute_quality_score(0.1, 0.05) == compute_quality_score(0.1, 0.05)
@@ -38,6 +39,7 @@ class TestQualityScore:
 
 
 # ── Novelty ─────────────────────────────────────────────────────────────
+
 
 class TestNoveltyScore:
     def test_no_prior_centroid_returns_one(self):
@@ -66,6 +68,7 @@ class TestNoveltyScore:
 
 # ── Freshness ───────────────────────────────────────────────────────────
 
+
 class TestFreshnessScore:
     def test_recent_is_high(self):
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -74,8 +77,7 @@ class TestFreshnessScore:
 
     def test_old_is_zero(self):
         old = (
-            datetime.datetime.now(datetime.timezone.utc)
-            - datetime.timedelta(hours=48)
+            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=48)
         ).isoformat()
         score = compute_freshness_score(old, window_hours=24)
         assert score == 0.0
@@ -85,14 +87,14 @@ class TestFreshnessScore:
 
     def test_in_range(self):
         ts = (
-            datetime.datetime.now(datetime.timezone.utc)
-            - datetime.timedelta(hours=6)
+            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=6)
         ).isoformat()
         score = compute_freshness_score(ts, window_hours=24)
         assert 0.0 <= score <= 1.0
 
 
 # ── Reliability ─────────────────────────────────────────────────────────
+
 
 class TestReliabilityScore:
     def test_no_history_returns_half(self):
@@ -127,6 +129,7 @@ class TestReliabilityScore:
 
 # ── Utility ─────────────────────────────────────────────────────────────
 
+
 class TestComputeUtility:
     def test_deterministic(self):
         u1 = compute_utility(0.9, 0.7, 0.8, 1.0)
@@ -151,6 +154,7 @@ class TestComputeUtility:
 
 # ── CreditEntry ─────────────────────────────────────────────────────────
 
+
 class TestCreditEntry:
     def test_to_dict_roundtrip(self):
         entry = CreditEntry(
@@ -170,6 +174,7 @@ class TestCreditEntry:
 
 
 # ── CreditsLedger ───────────────────────────────────────────────────────
+
 
 class TestCreditsLedger:
     def test_record_and_sum(self):
@@ -197,7 +202,7 @@ class TestCreditsLedger:
 
     def test_rolling_30_day(self):
         ledger = CreditsLedger()
-        entry = ledger.record_credit(
+        _ = ledger.record_credit(
             contributor_id="site_a",
             swarm_round_id="round_001",
             utility_score=0.8,

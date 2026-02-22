@@ -9,7 +9,6 @@ from tessera.swarm import (
     validate_for_swarm,
     score_token,
     aggregate_tokens,
-    compute_credits,
     submit,
     aggregate,
     broadcast,
@@ -20,7 +19,6 @@ from tessera.swarm import (
     CONTRIBUTOR_ID,
     QUALITY_SIGNALS,
     AGGREGATION_WEIGHT,
-    UTILITY_SCORE,
 )
 from tessera import policy
 from tessera.binary import TBFSerializer
@@ -209,8 +207,10 @@ class TestSwarmAggregator:
         tokens = [make_swarm_token(contributor_id=f"c{i}", dim=32) for i in range(3)]
         for t in tokens:
             t.custom_metadata[AGGREGATION_WEIGHT] = 1.0
+
         class DummyModel:
             pass
+
         agg = SwarmAggregator(DummyModel(), hub_dim=32)
         vec = agg.aggregate_hub(tokens, method=AggregationStrategy.MEAN)
         expected = aggregate_tokens(tokens, method=AggregationStrategy.MEAN)

@@ -3,10 +3,11 @@
 import math
 import torch
 import pytest
-import numpy as np
 from tessera.swarm import (
-    SwarmAggregator, AggregationStrategy,
-    swarm_metadata, validate_for_swarm,
+    SwarmAggregator,
+    AggregationStrategy,
+    swarm_metadata,
+    validate_for_swarm,
 )
 from tessera.transfer import ModeATransfer
 from tessera.token import TesseraToken, KnowledgeType, TokenSerializer
@@ -39,8 +40,10 @@ def contributor_tokens(train_loader, val_loader):
 
         transfer = ModeATransfer(tx, rx, f"site_{i}", f"rx_{i}")
         token = transfer.execute(
-            train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
         tokens.append(token)
     return tokens
@@ -68,8 +71,11 @@ class TestAggregation:
         """aggregate() returns a single SWARM token."""
         agg = SwarmAggregator(same_size_model, "central")
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            contributor_tokens,
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         assert isinstance(token, TesseraToken)
@@ -77,15 +83,16 @@ class TestAggregation:
         assert len(token.uhs_vector) == 2048
         assert token.target_model_id == "central"
 
-    def test_mean_strategy(
-        self, contributor_tokens, same_size_model, train_loader, val_loader
-    ):
+    def test_mean_strategy(self, contributor_tokens, same_size_model, train_loader, val_loader):
         """MEAN strategy produces valid token."""
         agg = SwarmAggregator(same_size_model, "c")
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
+            contributor_tokens,
+            train_loader,
+            val_loader,
             aggregation_strategy=AggregationStrategy.MEAN,
-            uhs_epochs=2, finetune_epochs=1,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         assert token.custom_metadata["aggregation_method"] == "mean"
@@ -96,9 +103,12 @@ class TestAggregation:
         """WEIGHTED_MEAN with auto-weights (inverse drift)."""
         agg = SwarmAggregator(same_size_model, "c")
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
+            contributor_tokens,
+            train_loader,
+            val_loader,
             aggregation_strategy=AggregationStrategy.WEIGHTED_MEAN,
-            uhs_epochs=2, finetune_epochs=1,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         assert token.custom_metadata["aggregation_method"] == "weighted_mean"
@@ -113,23 +123,27 @@ class TestAggregation:
         """TRIMMED_MEAN strategy."""
         agg = SwarmAggregator(same_size_model, "c")
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
+            contributor_tokens,
+            train_loader,
+            val_loader,
             aggregation_strategy=AggregationStrategy.TRIMMED_MEAN,
             trimmed_fraction=0.1,
-            uhs_epochs=2, finetune_epochs=1,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         assert token.custom_metadata["aggregation_method"] == "trimmed_mean"
 
-    def test_median_strategy(
-        self, contributor_tokens, same_size_model, train_loader, val_loader
-    ):
+    def test_median_strategy(self, contributor_tokens, same_size_model, train_loader, val_loader):
         """MEDIAN strategy."""
         agg = SwarmAggregator(same_size_model, "c")
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
+            contributor_tokens,
+            train_loader,
+            val_loader,
             aggregation_strategy=AggregationStrategy.MEDIAN,
-            uhs_epochs=2, finetune_epochs=1,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         assert token.custom_metadata["aggregation_method"] == "median"
@@ -140,8 +154,11 @@ class TestAggregation:
         """Aggregated token metadata has contributor IDs, count, drifts."""
         agg = SwarmAggregator(same_size_model, "central")
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            contributor_tokens,
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         meta = token.custom_metadata
@@ -150,17 +167,18 @@ class TestAggregation:
         assert len(meta["contributor_drift_scores"]) == 3
         assert meta["swarm_mode"] == "aggregate"
 
-    def test_custom_weights(
-        self, contributor_tokens, same_size_model, train_loader, val_loader
-    ):
+    def test_custom_weights(self, contributor_tokens, same_size_model, train_loader, val_loader):
         """Custom weights are used and stored in metadata."""
         agg = SwarmAggregator(same_size_model, "c")
         custom_w = [0.5, 0.3, 0.2]
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
+            contributor_tokens,
+            train_loader,
+            val_loader,
             aggregation_strategy=AggregationStrategy.WEIGHTED_MEAN,
             weights=custom_w,
-            uhs_epochs=2, finetune_epochs=1,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         assert token.custom_metadata["contributor_weights"] == custom_w
@@ -171,8 +189,11 @@ class TestAggregation:
         """Aggregator with different d_model than contributors works."""
         agg = SwarmAggregator(large_model, "big_central")
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            contributor_tokens,
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         assert isinstance(token, TesseraToken)
@@ -183,14 +204,15 @@ class TestAggregation:
 
 
 class TestBroadcast:
-    def test_returns_pair(
-        self, contributor_tokens, same_size_model, train_loader, val_loader
-    ):
+    def test_returns_pair(self, contributor_tokens, same_size_model, train_loader, val_loader):
         """aggregate_and_broadcast returns (token, list)."""
         agg = SwarmAggregator(same_size_model, "central")
         agg_token, bcast = agg.aggregate_and_broadcast(
-            contributor_tokens, train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            contributor_tokens,
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         assert isinstance(agg_token, TesseraToken)
@@ -203,8 +225,11 @@ class TestBroadcast:
         """Each broadcast token targets its specific contributor."""
         agg = SwarmAggregator(same_size_model, "central")
         _, bcast = agg.aggregate_and_broadcast(
-            contributor_tokens, train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            contributor_tokens,
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         expected_ids = {t.source_model_id for t in contributor_tokens}
@@ -217,8 +242,11 @@ class TestBroadcast:
         """All broadcast tokens have source = aggregator_id."""
         agg = SwarmAggregator(same_size_model, "central")
         _, bcast = agg.aggregate_and_broadcast(
-            contributor_tokens, train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            contributor_tokens,
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         for bt in bcast:
@@ -231,8 +259,11 @@ class TestBroadcast:
         """Broadcast tokens carry 2048-dim UHS vectors."""
         agg = SwarmAggregator(same_size_model, "central")
         _, bcast = agg.aggregate_and_broadcast(
-            contributor_tokens, train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            contributor_tokens,
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         for bt in bcast:
@@ -250,8 +281,11 @@ class TestPrivacyComposition:
         """ε_total = √N × max(εᵢ)."""
         agg = SwarmAggregator(same_size_model, "c")
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            contributor_tokens,
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         n = len(contributor_tokens)
@@ -266,8 +300,11 @@ class TestPrivacyComposition:
         """δ_total = Σ δᵢ."""
         agg = SwarmAggregator(same_size_model, "c")
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            contributor_tokens,
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         expected_delta = sum(t.privacy_delta for t in contributor_tokens)
@@ -290,9 +327,7 @@ class TestValidation:
         """Raises ValueError for only 1 token."""
         agg = SwarmAggregator(same_size_model, "c")
         with pytest.raises(ValueError, match="at least 2"):
-            agg.aggregate(
-                [contributor_tokens[0]], train_loader, val_loader
-            )
+            agg.aggregate([contributor_tokens[0]], train_loader, val_loader)
 
     def test_rejects_wrong_hub_dim(self, same_size_model, train_loader, val_loader):
         """Raises ValueError if hub vector != 2048-dim."""
@@ -322,14 +357,15 @@ class TestValidation:
 
 
 class TestEdgeCases:
-    def test_two_contributors(
-        self, contributor_tokens, same_size_model, train_loader, val_loader
-    ):
+    def test_two_contributors(self, contributor_tokens, same_size_model, train_loader, val_loader):
         """Works with minimum (2) contributors."""
         agg = SwarmAggregator(same_size_model, "c")
         token = agg.aggregate(
-            contributor_tokens[:2], train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            contributor_tokens[:2],
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         assert token.custom_metadata["contributor_count"] == 2
@@ -340,8 +376,11 @@ class TestEdgeCases:
         """Drift score is non-negative."""
         agg = SwarmAggregator(same_size_model, "c")
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            contributor_tokens,
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         assert token.drift_score >= 0
@@ -352,8 +391,11 @@ class TestEdgeCases:
         """Lineage DAG includes all contributor nodes + aggregator."""
         agg = SwarmAggregator(same_size_model, "central")
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            contributor_tokens,
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         dag = token.lineage_dag
@@ -362,15 +404,18 @@ class TestEdgeCases:
         assert len(dag["nodes"]) == 4
 
     def test_serialise_aggregated_token(
-        self, contributor_tokens, same_size_model, train_loader, val_loader,
-        tmp_dir
+        self, contributor_tokens, same_size_model, train_loader, val_loader, tmp_dir
     ):
         """Aggregated token can be saved and loaded."""
         import os
+
         agg = SwarmAggregator(same_size_model, "c")
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
-            uhs_epochs=2, finetune_epochs=1,
+            contributor_tokens,
+            train_loader,
+            val_loader,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         path = os.path.join(tmp_dir, "swarm.safetensors")
@@ -392,9 +437,12 @@ class TestRobustWeightedMean:
         """ROBUST_WEIGHTED_MEAN strategy produces a valid SWARM token."""
         agg = SwarmAggregator(same_size_model, "central")
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
+            contributor_tokens,
+            train_loader,
+            val_loader,
             aggregation_strategy=AggregationStrategy.ROBUST_WEIGHTED_MEAN,
-            uhs_epochs=2, finetune_epochs=1,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         assert token.knowledge_type == KnowledgeType.SWARM
@@ -409,10 +457,13 @@ class TestRobustWeightedMean:
         n = len(contributor_tokens)
         weights = [1.0 / n] * n
         token = agg.aggregate(
-            contributor_tokens, train_loader, val_loader,
+            contributor_tokens,
+            train_loader,
+            val_loader,
             aggregation_strategy=AggregationStrategy.ROBUST_WEIGHTED_MEAN,
             weights=weights,
-            uhs_epochs=2, finetune_epochs=1,
+            uhs_epochs=2,
+            finetune_epochs=1,
         )
 
         assert token.custom_metadata["contributor_count"] == n
@@ -432,7 +483,9 @@ class TestSwarmMetadataHelper:
     def test_extra_signals(self):
         """Extra signals are merged into the metadata dict."""
         meta = swarm_metadata(
-            "round_042", "site_a", "sha256:abc",
+            "round_042",
+            "site_a",
+            "sha256:abc",
             extra_signals={"quality_hint": 0.9, "region": "us-east"},
         )
         assert meta["quality_hint"] == 0.9

@@ -224,9 +224,11 @@ def _cmd_transfer(args):
 
 # --- swarm --------------------------------------------------------------------
 
+
 def _cmd_swarm_submit(args):
     """Submit a contributor token to central ingress."""
     from .swarm import submit
+
     ok, msg = submit(args.token, args.contributor_id)
     if ok:
         print(msg)
@@ -238,6 +240,7 @@ def _cmd_swarm_submit(args):
 def _cmd_swarm_aggregate(args):
     """Aggregate accepted tokens for a round (hub vector)."""
     from .swarm import aggregate
+
     token_paths = getattr(args, "tokens", None) or []
     if not token_paths and getattr(args, "token", None):
         token_paths = [args.token]
@@ -256,11 +259,14 @@ def _cmd_swarm_broadcast(args):
     """Emit broadcast token for round (large model -> contributors)."""
     from .swarm import aggregate, broadcast
     from .binary import TBFSerializer
+
     token_paths = getattr(args, "tokens", None) or []
     if not token_paths and getattr(args, "token", None):
         token_paths = [args.token]
     if not token_paths:
-        print("Error: provide token paths for aggregate (e.g. --tokens a.tbf b.tbf)", file=sys.stderr)
+        print(
+            "Error: provide token paths for aggregate (e.g. --tokens a.tbf b.tbf)", file=sys.stderr
+        )
         return 1
     vec = aggregate(args.round, token_paths)
     if vec is None:
@@ -277,6 +283,7 @@ def _cmd_swarm_broadcast(args):
 def _cmd_swarm_score(args):
     """Score tokens for a round (utility)."""
     from .swarm import score
+
     token_paths = getattr(args, "tokens", None) or []
     if not token_paths and getattr(args, "token", None):
         token_paths = [args.token]
@@ -290,11 +297,13 @@ def _cmd_swarm_score(args):
 
 def _cmd_swarm_credits(args):
     """Show credits / free-usage tier for contributor."""
-    from .credits import compute_credits, rolling_30_day_credits
+
     # v1: no persistent ledger in CLI; show formula and placeholder
     print(f"Contributor: {args.contributor_id}")
     print("Credits (v1): rolling 30-day sum of accepted utility scores.")
-    print("Use the Python API (credits.compute_credits, credits.rolling_30_day_credits) with a ledger for production.")
+    print(
+        "Use the Python API (credits.compute_credits, credits.rolling_30_day_credits) with a ledger for production."
+    )
     return 0
 
 
@@ -349,12 +358,16 @@ def main():
     subparsers.add_parser("transfer", help="Show transfer API usage guidance")
 
     # -- swarm ------------------------------------------------------------------
-    p_swarm = subparsers.add_parser("swarm", help="Swarm round-trip: submit, aggregate, broadcast, score, credits")
+    p_swarm = subparsers.add_parser(
+        "swarm", help="Swarm round-trip: submit, aggregate, broadcast, score, credits"
+    )
     swarm_sub = p_swarm.add_subparsers(dest="swarm_command")
 
     p_submit = swarm_sub.add_parser("submit", help="Submit a contributor token to central ingress")
     p_submit.add_argument("--token", required=True, help="Path to .tbf token file")
-    p_submit.add_argument("--contributor-id", required=True, dest="contributor_id", help="Contributor ID")
+    p_submit.add_argument(
+        "--contributor-id", required=True, dest="contributor_id", help="Contributor ID"
+    )
 
     p_agg = swarm_sub.add_parser("aggregate", help="Aggregate accepted tokens for a round")
     p_agg.add_argument("--round", required=True, dest="round", help="Round ID")
@@ -362,8 +375,15 @@ def main():
 
     p_broad = swarm_sub.add_parser("broadcast", help="Emit broadcast token for round")
     p_broad.add_argument("--round", required=True, dest="round", help="Round ID")
-    p_broad.add_argument("--tokens", nargs="+", default=[], help="Paths to accepted .tbf token files")
-    p_broad.add_argument("--broadcast-version", dest="broadcast_version", default=None, help="Broadcast version string")
+    p_broad.add_argument(
+        "--tokens", nargs="+", default=[], help="Paths to accepted .tbf token files"
+    )
+    p_broad.add_argument(
+        "--broadcast-version",
+        dest="broadcast_version",
+        default=None,
+        help="Broadcast version string",
+    )
     p_broad.add_argument("--output", default=None, help="Output .tbf path")
 
     p_score = swarm_sub.add_parser("score", help="Score tokens for a round")
@@ -371,7 +391,9 @@ def main():
     p_score.add_argument("--tokens", nargs="+", default=[], help="Paths to .tbf token files")
 
     p_cred = swarm_sub.add_parser("credits", help="Show credits for contributor")
-    p_cred.add_argument("--contributor-id", required=True, dest="contributor_id", help="Contributor ID")
+    p_cred.add_argument(
+        "--contributor-id", required=True, dest="contributor_id", help="Contributor ID"
+    )
 
     args = parser.parse_args()
 

@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 
 from tessera.weight_ops import (
-    WeightSnapshot,
     WeightStats,
     _adapt_weight,
     chunk_for_hub,
@@ -46,7 +45,7 @@ class TestExtractWeights:
 
     def test_correct_shapes(self):
         model = nn.Linear(32, 64)
-        weights = extract_weights(model, layer_names=[""])
+        _ = extract_weights(model, layer_names=[""])
         # nn.Sequential wraps, so use named module directly
         model2 = nn.Sequential(nn.Linear(32, 64))
         weights2 = extract_weights(model2)

@@ -32,6 +32,7 @@ UTILITY_WEIGHTS: Dict[str, float] = {
 
 # ── Credit ledger entry ──────────────────────────────────────────────────
 
+
 @dataclass
 class CreditEntry:
     """Single credit ledger record for one contributor in one round."""
@@ -45,9 +46,7 @@ class CreditEntry:
     reliability_score: float
     credits_awarded: float
     timestamp: str = field(
-        default_factory=lambda: datetime.datetime.now(
-            datetime.timezone.utc
-        ).isoformat()
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat()
     )
     notes: Optional[str] = None
 
@@ -73,6 +72,7 @@ class CreditEntry:
 
 
 # ── Scoring functions ────────────────────────────────────────────────────
+
 
 def compute_quality_score(drift: float, recon_error: float = 0.0) -> float:
     """
@@ -107,9 +107,7 @@ def compute_novelty_score(
     if norm_t < 1e-10 or norm_c < 1e-10:
         return 1.0
 
-    cosine_sim = float(
-        np.dot(token_hub, prior_centroid) / (norm_t * norm_c)
-    )
+    cosine_sim = float(np.dot(token_hub, prior_centroid) / (norm_t * norm_c))
     # Clamp to [-1, 1] for numerical safety
     cosine_sim = max(-1.0, min(1.0, cosine_sim))
 
@@ -209,6 +207,7 @@ def compute_utility(
 
 # ── Credits ledger ───────────────────────────────────────────────────────
 
+
 class CreditsLedger:
     """
     Append-only ledger of contributor credits and utility.
@@ -271,17 +270,11 @@ class CreditsLedger:
 
     def get_contributor_credits(self, contributor_id: str) -> float:
         """Sum of all credits ever awarded to this contributor."""
-        return sum(
-            e.credits_awarded
-            for e in self.entries
-            if e.contributor_id == contributor_id
-        )
+        return sum(e.credits_awarded for e in self.entries if e.contributor_id == contributor_id)
 
     def rolling_30_day_credits(self, contributor_id: str) -> float:
         """Sum of credits from entries in the last 30 days."""
-        cutoff = datetime.datetime.now(
-            datetime.timezone.utc
-        ) - datetime.timedelta(days=30)
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)
 
         total = 0.0
         for e in self.entries:

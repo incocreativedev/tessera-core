@@ -3,12 +3,10 @@
 import numpy as np
 import pytest
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from tessera.mode_w import ModeWTransfer
 from tessera.token import KnowledgeType, TesseraToken
-from tessera.weight_ops import extract_weights
 
 
 # ---------------------------------------------------------------------------

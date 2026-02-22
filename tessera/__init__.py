@@ -25,16 +25,30 @@ from .mode_d import ModeDTransfer
 from .swap import SWAPProjection
 from .swarm import SwarmAggregator, AggregationStrategy, swarm_metadata, validate_for_swarm
 from .policy import (
-    accept_token, check_round_acceptance, RoundPolicy,
-    MIN_ACCEPTED_CONTRIBUTORS, MAX_CONTRIBUTOR_WEIGHT_FRACTION,
+    accept_token,
+    check_round_acceptance,
+    RoundPolicy,
+    MIN_ACCEPTED_CONTRIBUTORS,
+    MAX_CONTRIBUTOR_WEIGHT_FRACTION,
 )
 from .credits import (
-    CreditEntry, CreditsLedger, UTILITY_WEIGHTS,
-    compute_quality_score, compute_novelty_score,
-    compute_freshness_score, compute_reliability_score, compute_utility,
+    CreditEntry,
+    CreditsLedger,
+    UTILITY_WEIGHTS,
+    compute_quality_score,
+    compute_novelty_score,
+    compute_freshness_score,
+    compute_reliability_score,
+    compute_utility,
 )
 from .correspondence import LayerCorrespondence, linear_cka
-from .weight_ops import WeightSnapshot, WeightStats, extract_weights, svd_compress, compute_weight_stats
+from .weight_ops import (
+    WeightSnapshot,
+    WeightStats,
+    extract_weights,
+    svd_compress,
+    compute_weight_stats,
+)
 from .drift import DriftMeasure, WeightDriftMeasure
 from .privacy import DifferentialPrivacy
 from .gates import ProjectionType, ProjectionHint

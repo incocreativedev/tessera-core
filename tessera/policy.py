@@ -30,6 +30,7 @@ MAX_CONTRIBUTOR_WEIGHT_FRACTION: float = 0.15
 
 # ── Token-level acceptance ────────────────────────────────────────────────
 
+
 def accept_token(token: TesseraToken) -> Tuple[bool, str]:
     """
     Validate a single token for swarm round acceptance.
@@ -59,14 +60,10 @@ def accept_token(token: TesseraToken) -> Tuple[bool, str]:
 
     # Privacy fields
     if token.privacy_epsilon <= 0:
-        return False, (
-            f"Invalid privacy_epsilon={token.privacy_epsilon}; must be > 0."
-        )
+        return False, (f"Invalid privacy_epsilon={token.privacy_epsilon}; must be > 0.")
 
     if not (0 < token.privacy_delta < 1):
-        return False, (
-            f"Invalid privacy_delta={token.privacy_delta}; must be in (0, 1)."
-        )
+        return False, (f"Invalid privacy_delta={token.privacy_delta}; must be in (0, 1).")
 
     # UHS vector
     if not token.uhs_vector or len(token.uhs_vector) == 0:
@@ -76,6 +73,7 @@ def accept_token(token: TesseraToken) -> Tuple[bool, str]:
 
 
 # ── Round-level acceptance ────────────────────────────────────────────────
+
 
 def check_round_acceptance(
     tokens: List[TesseraToken],
@@ -103,9 +101,7 @@ def check_round_acceptance(
             return False, f"Token {i} rejected: {reason}"
 
     # Count unique contributors
-    contributor_ids = [
-        t.custom_metadata.get("contributor_id", "") for t in tokens
-    ]
+    contributor_ids = [t.custom_metadata.get("contributor_id", "") for t in tokens]
     unique_contributors = set(contributor_ids)
 
     if len(unique_contributors) < min_contributors:
@@ -117,6 +113,7 @@ def check_round_acceptance(
     # Weight cap: each contributor's token count / total tokens
     n_total = len(tokens)
     from collections import Counter
+
     counts = Counter(contributor_ids)
     for cid, count in counts.items():
         fraction = count / n_total
@@ -130,6 +127,7 @@ def check_round_acceptance(
 
 
 # ── Round policy encapsulation ────────────────────────────────────────────
+
 
 @dataclass
 class RoundPolicy:
@@ -160,15 +158,12 @@ class RoundPolicy:
             cid = token.custom_metadata.get("contributor_id", "")
             if cid not in self.allowed_contributors:
                 return False, (
-                    f"Contributor '{cid}' not in allowed set for "
-                    f"round {self.round_id}."
+                    f"Contributor '{cid}' not in allowed set for " f"round {self.round_id}."
                 )
 
         return True, ""
 
-    def validate_round(
-        self, tokens: List[TesseraToken]
-    ) -> Tuple[bool, str]:
+    def validate_round(self, tokens: List[TesseraToken]) -> Tuple[bool, str]:
         """Validate a full round against this policy."""
         return check_round_acceptance(
             tokens,

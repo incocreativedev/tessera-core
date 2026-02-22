@@ -44,10 +44,10 @@ logger = setup_logging("tessera.swarm")
 class AggregationStrategy(Enum):
     """How to combine contributor hub vectors."""
 
-    MEAN = "mean"                   # Simple arithmetic mean
-    WEIGHTED_MEAN = "weighted_mean" # Weight by inverse-drift or custom
-    TRIMMED_MEAN = "trimmed_mean"   # Drop outlier tails (Byzantine resilience)
-    MEDIAN = "median"               # Per-dimension median (most robust)
+    MEAN = "mean"  # Simple arithmetic mean
+    WEIGHTED_MEAN = "weighted_mean"  # Weight by inverse-drift or custom
+    TRIMMED_MEAN = "trimmed_mean"  # Drop outlier tails (Byzantine resilience)
+    MEDIAN = "median"  # Per-dimension median (most robust)
     ROBUST_WEIGHTED_MEAN = "robust_weighted_mean"  # Huber-style cosine clipping + weighted mean
 
 
@@ -153,14 +153,13 @@ class SwarmAggregator:
 
         # ── Step 2: Extract hub vectors ───────────────────────────────
         logger.info("[Step 2/8] Extracting hub vectors...")
-        hub_matrix, contributor_ids = self._extract_hub_vectors(
-            contributor_tokens
-        )
+        hub_matrix, contributor_ids = self._extract_hub_vectors(contributor_tokens)
         logger.info(f"  Hub matrix shape: ({hub_matrix.shape[0]}, {hub_matrix.shape[1]})")
 
         # ── Step 3: Aggregate ─────────────────────────────────────────
-        logger.info(f"[Step 3/8] Aggregating hub vectors "
-                     f"(strategy={aggregation_strategy.value})...")
+        logger.info(
+            f"[Step 3/8] Aggregating hub vectors " f"(strategy={aggregation_strategy.value})..."
+        )
 
         if weights is None and aggregation_strategy == AggregationStrategy.WEIGHTED_MEAN:
             weights = self._auto_weights(contributor_tokens)
@@ -181,28 +180,25 @@ class SwarmAggregator:
 
         # ── Step 5: Train aggregator UHS ──────────────────────────────
         logger.info("[Step 5/8] Training aggregator UHS encoder/decoder...")
-        agg_acts = self._collect_activations(
-            self.aggregator, train_dataloader, agg_layer_names
-        )
+        agg_acts = self._collect_activations(self.aggregator, train_dataloader, agg_layer_names)
         agg_pooled = self._pool_activations(agg_acts, agg_layer_names)
 
         self.agg_uhs = UniversalHubSpace(agg_d, device=self.device)
         agg_loader = DataLoader(
             TensorDataset(torch.tensor(agg_pooled, dtype=torch.float32)),
-            batch_size=32, shuffle=True,
+            batch_size=32,
+            shuffle=True,
         )
         self.agg_uhs.train(agg_loader, epochs=uhs_epochs, verbose=True)
 
-        rt_err = self.agg_uhs.round_trip_error(
-            torch.tensor(agg_pooled[:100], dtype=torch.float32)
-        )
+        rt_err = self.agg_uhs.round_trip_error(torch.tensor(agg_pooled[:100], dtype=torch.float32))
         logger.info(f"  Aggregator UHS round-trip error: {rt_err:.4f}")
 
         # ── Step 6: Decode aggregated hub → aggregator space ──────────
         logger.info("[Step 6/8] Decoding aggregated hub into aggregator space...")
-        agg_hub_tensor = torch.tensor(
-            aggregated_hub, dtype=torch.float32
-        ).unsqueeze(0).to(self.device)
+        agg_hub_tensor = (
+            torch.tensor(aggregated_hub, dtype=torch.float32).unsqueeze(0).to(self.device)
+        )
 
         # Expand to match training data size for fine-tuning targets
         n_samples = agg_pooled.shape[0]
@@ -213,31 +209,28 @@ class SwarmAggregator:
         # ── Step 7: Fine-tune aggregator ──────────────────────────────
         logger.info("[Step 7/8] Fine-tuning aggregator on decoded targets...")
         self._finetune_aggregator(
-            self.aggregator, train_dataloader, decoded_targets,
-            agg_layer_names, finetune_epochs, finetune_lr,
+            self.aggregator,
+            train_dataloader,
+            decoded_targets,
+            agg_layer_names,
+            finetune_epochs,
+            finetune_lr,
         )
 
         # ── Step 8: Measure drift, package token ──────────────────────
         logger.info("[Step 8/8] Measuring drift and creating token...")
 
-        drift = DriftMeasure(
-            self.aggregator, self.aggregator, self.device
-        ).compute(val_dataloader)
+        drift = DriftMeasure(self.aggregator, self.aggregator, self.device).compute(val_dataloader)
 
         # Compose privacy from contributors
-        composed_eps, composed_delta = self._compose_privacy_budgets(
-            contributor_tokens
-        )
+        composed_eps, composed_delta = self._compose_privacy_budgets(contributor_tokens)
 
         dp = DifferentialPrivacy(privacy_epsilon, privacy_delta)
         private_hub = dp.add_noise(aggregated_hub)
 
         # Per-contributor drift scores
         contributor_drifts = [t.drift_score for t in contributor_tokens]
-        contributor_weights = (
-            weights if weights is not None
-            else [1.0 / n] * n
-        )
+        contributor_weights = weights if weights is not None else [1.0 / n] * n
 
         token = TesseraToken(
             knowledge_type=KnowledgeType.SWARM,
@@ -248,9 +241,8 @@ class SwarmAggregator:
                 "nodes": [
                     {"id": f"c{i}", "type": "contributor", "ref": cid}
                     for i, cid in enumerate(contributor_ids)
-                ] + [
-                    {"id": "agg", "type": "aggregator", "ref": self.aggregator_id}
-                ],
+                ]
+                + [{"id": "agg", "type": "aggregator", "ref": self.aggregator_id}],
                 "root": "agg",
             },
             generation=1,
@@ -275,7 +267,7 @@ class SwarmAggregator:
             },
         )
 
-        logger.info(f"  Aggregation complete!")
+        logger.info("  Aggregation complete!")
         logger.info(f"  Contributors:  {n}")
         logger.info(f"  Strategy:      {aggregation_strategy.value}")
         logger.info(f"  Drift:         {drift:.6f}")
@@ -329,15 +321,11 @@ class SwarmAggregator:
         )
         agg_layer_names = sorted(agg_fingerprints.keys())
 
-        updated_acts = self._collect_activations(
-            self.aggregator, train_dataloader, agg_layer_names
-        )
+        updated_acts = self._collect_activations(self.aggregator, train_dataloader, agg_layer_names)
         updated_pooled = self._pool_activations(updated_acts, agg_layer_names)
 
         # Encode through the aggregator's UHS
-        updated_tensor = torch.tensor(
-            updated_pooled, dtype=torch.float32
-        ).to(self.device)
+        updated_tensor = torch.tensor(updated_pooled, dtype=torch.float32).to(self.device)
         updated_hub = self.agg_uhs.encode(updated_tensor)
         mean_hub = updated_hub.mean(dim=0).cpu().numpy()
 
@@ -391,14 +379,11 @@ class SwarmAggregator:
     #  Validation
     # ══════════════════════════════════════════════════════════════════════
 
-    def _validate_contributor_tokens(
-        self, tokens: List[TesseraToken]
-    ) -> None:
+    def _validate_contributor_tokens(self, tokens: List[TesseraToken]) -> None:
         """Ensure all contributor tokens are valid for aggregation."""
         if len(tokens) < 2:
             raise ValueError(
-                f"Swarm aggregation requires at least 2 contributor tokens, "
-                f"got {len(tokens)}."
+                f"Swarm aggregation requires at least 2 contributor tokens, " f"got {len(tokens)}."
             )
 
         for i, t in enumerate(tokens):
@@ -412,13 +397,9 @@ class SwarmAggregator:
     #  Hub vector extraction and aggregation
     # ══════════════════════════════════════════════════════════════════════
 
-    def _extract_hub_vectors(
-        self, tokens: List[TesseraToken]
-    ) -> Tuple[np.ndarray, List[str]]:
+    def _extract_hub_vectors(self, tokens: List[TesseraToken]) -> Tuple[np.ndarray, List[str]]:
         """Extract N × 2048 hub matrix and contributor IDs."""
-        hub_vectors = np.array(
-            [t.uhs_vector for t in tokens], dtype=np.float32
-        )
+        hub_vectors = np.array([t.uhs_vector for t in tokens], dtype=np.float32)
         contributor_ids = [t.source_model_id for t in tokens]
         return hub_vectors, contributor_ids
 
@@ -469,9 +450,7 @@ class SwarmAggregator:
             w = w / w_sum
         return (hub_matrix * w[:, np.newaxis]).sum(axis=0)
 
-    def _trimmed_mean_aggregation(
-        self, hub_matrix: np.ndarray, fraction: float
-    ) -> np.ndarray:
+    def _trimmed_mean_aggregation(self, hub_matrix: np.ndarray, fraction: float) -> np.ndarray:
         """
         Per-dimension trimmed mean: sort each dimension, drop top/bottom
         fraction, average the rest. Provides Byzantine resilience.
@@ -484,7 +463,7 @@ class SwarmAggregator:
             return self._median_aggregation(hub_matrix)
 
         sorted_matrix = np.sort(hub_matrix, axis=0)
-        trimmed = sorted_matrix[trim_count: n - trim_count]
+        trimmed = sorted_matrix[trim_count : n - trim_count]
         return trimmed.mean(axis=0)
 
     def _median_aggregation(self, hub_matrix: np.ndarray) -> np.ndarray:
@@ -523,9 +502,7 @@ class SwarmAggregator:
             if row_norm < 1e-10:
                 distances[i] = 1.0  # maximally distant
             else:
-                cos_sim = float(
-                    np.dot(hub_matrix[i], median_hub) / (row_norm * median_norm)
-                )
+                cos_sim = float(np.dot(hub_matrix[i], median_hub) / (row_norm * median_norm))
                 cos_sim = max(-1.0, min(1.0, cos_sim))
                 distances[i] = (1.0 - cos_sim) / 2.0  # [0, 1]
 
@@ -581,13 +558,16 @@ class SwarmAggregator:
         hooks = []
         for name, module in model.named_modules():
             if name in layer_names:
+
                 def make_hook(layer_name):
                     def hook_fn(mod, inp, output):
                         out = output[0] if isinstance(output, tuple) else output
                         if out.ndim == 3:
                             out = out.mean(dim=1)
                         activations[layer_name].append(out.detach().cpu())
+
                     return hook_fn
+
                 hooks.append(module.register_forward_hook(make_hook(name)))
 
         with torch.no_grad():
@@ -600,9 +580,7 @@ class SwarmAggregator:
             h.remove()
         return activations
 
-    def _pool_activations(
-        self, acts: Dict[str, list], layer_names: List[str]
-    ) -> np.ndarray:
+    def _pool_activations(self, acts: Dict[str, list], layer_names: List[str]) -> np.ndarray:
         """Pool activations using middle layer (most informative)."""
         mid_idx = len(layer_names) // 2
         mid_layer = layer_names[mid_idx]
@@ -650,7 +628,7 @@ class SwarmAggregator:
                 if sample_idx + batch_size > len(targets):
                     break
 
-                batch_targets = targets[sample_idx: sample_idx + batch_size]
+                batch_targets = targets[sample_idx : sample_idx + batch_size]
                 sample_idx += batch_size
 
                 captured = {}
@@ -680,9 +658,7 @@ class SwarmAggregator:
                 tgt = batch_targets
 
                 if act.shape[-1] != tgt.shape[-1]:
-                    tgt = F.adaptive_avg_pool1d(
-                        tgt.unsqueeze(1), act.shape[-1]
-                    ).squeeze(1)
+                    tgt = F.adaptive_avg_pool1d(tgt.unsqueeze(1), act.shape[-1]).squeeze(1)
 
                 loss = F.mse_loss(act, tgt)
                 optimiser.zero_grad()
@@ -691,8 +667,7 @@ class SwarmAggregator:
                 epoch_loss += loss.item()
 
             logger.info(
-                f"  Fine-tune epoch {epoch + 1}/{epochs}: "
-                f"alignment_loss={epoch_loss:.4f}"
+                f"  Fine-tune epoch {epoch + 1}/{epochs}: " f"alignment_loss={epoch_loss:.4f}"
             )
 
         model.eval()
@@ -701,9 +676,7 @@ class SwarmAggregator:
     #  Privacy composition
     # ══════════════════════════════════════════════════════════════════════
 
-    def _compose_privacy_budgets(
-        self, tokens: List[TesseraToken]
-    ) -> Tuple[float, float]:
+    def _compose_privacy_budgets(self, tokens: List[TesseraToken]) -> Tuple[float, float]:
         """
         Compose privacy budgets from N contributors.
 
@@ -724,6 +697,7 @@ class SwarmAggregator:
 # ══════════════════════════════════════════════════════════════════════════
 #  Module-level helpers
 # ══════════════════════════════════════════════════════════════════════════
+
 
 def swarm_metadata(
     swarm_round_id: Optional[str] = None,
@@ -850,10 +824,7 @@ def aggregate_tokens(
     if method == "weighted":
         method = "weighted_mean"
     hub_matrix = np.array([t.uhs_vector for t in tokens], dtype=np.float32)
-    weights = [
-        (t.custom_metadata or {}).get(AGGREGATION_WEIGHT, 1.0)
-        for t in tokens
-    ]
+    weights = [(t.custom_metadata or {}).get(AGGREGATION_WEIGHT, 1.0) for t in tokens]
     if method == "mean":
         agg = hub_matrix.mean(axis=0)
     elif method == "weighted_mean":

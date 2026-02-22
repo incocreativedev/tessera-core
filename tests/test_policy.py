@@ -2,7 +2,6 @@
 Tests for tessera.policy — governance rules and token acceptance.
 """
 
-import pytest
 import numpy as np
 
 from tessera.token import TesseraToken, KnowledgeType
@@ -16,6 +15,7 @@ from tessera.policy import (
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
+
 
 def _make_swarm_token(
     contributor_id: str = "site_a",
@@ -44,6 +44,7 @@ def _make_swarm_token(
 
 
 # ── Token-level acceptance ──────────────────────────────────────────────
+
 
 class TestAcceptToken:
     """Tests for accept_token()."""
@@ -103,24 +104,19 @@ class TestAcceptToken:
 
 # ── Round-level acceptance ──────────────────────────────────────────────
 
+
 class TestCheckRoundAcceptance:
     """Tests for check_round_acceptance()."""
 
     def test_valid_round_with_seven_contributors(self):
         # 7 contributors × 1 token each = 14.3% per contributor (< 15% cap)
-        tokens = [
-            _make_swarm_token(contributor_id=f"site_{i}")
-            for i in range(7)
-        ]
+        tokens = [_make_swarm_token(contributor_id=f"site_{i}") for i in range(7)]
         ok, reason = check_round_acceptance(tokens)
         assert ok is True
         assert reason == ""
 
     def test_rejected_fewer_than_min_contributors(self):
-        tokens = [
-            _make_swarm_token(contributor_id=f"site_{i}")
-            for i in range(3)
-        ]
+        tokens = [_make_swarm_token(contributor_id=f"site_{i}") for i in range(3)]
         ok, reason = check_round_acceptance(tokens)
         assert ok is False
         assert "unique contributors" in reason
@@ -142,15 +138,13 @@ class TestCheckRoundAcceptance:
     def test_custom_min_contributors(self):
         # 7 contributors with min_contributors=3 — passes both contributor
         # count and weight cap (each at 14.3%)
-        tokens = [
-            _make_swarm_token(contributor_id=f"site_{i}")
-            for i in range(7)
-        ]
+        tokens = [_make_swarm_token(contributor_id=f"site_{i}") for i in range(7)]
         ok, reason = check_round_acceptance(tokens, min_contributors=3)
         assert ok is True
 
 
 # ── RoundPolicy ─────────────────────────────────────────────────────────
+
 
 class TestRoundPolicy:
     """Tests for the RoundPolicy dataclass."""
@@ -172,10 +166,7 @@ class TestRoundPolicy:
     def test_validate_round_delegates(self):
         # 7 contributors, relaxed min to 2 — passes weight cap too
         policy = RoundPolicy(round_id="round_001", min_contributors=2)
-        tokens = [
-            _make_swarm_token(contributor_id=f"site_{i}")
-            for i in range(7)
-        ]
+        tokens = [_make_swarm_token(contributor_id=f"site_{i}") for i in range(7)]
         ok, reason = policy.validate_round(tokens)
         assert ok is True
 
