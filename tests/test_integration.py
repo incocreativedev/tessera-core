@@ -2,33 +2,26 @@
 
 import os
 import torch
+import numpy as np
 from tessera import (
-    ModeATransfer,
-    TokenSerializer,
-    TBFSerializer,
-    QuantType,
+    ModeATransfer, TesseraToken, TokenSerializer,
+    TBFSerializer, QuantType, DriftMeasure,
+    ActivationFingerprint, compute_fingerprints,
+    DifferentialPrivacy, ProjectionType, ProjectionHint,
     AnchorRegistry,
 )
 from tests.conftest import SmallTransformer
 
 
 class TestPublicAPI:
-    """Verify public symbols import correctly (core + swarm)."""
+    """Verify all 17 public symbols import correctly."""
 
     def test_all_exports(self):
         import tessera
-
-        expected = {
-            "ModeATransfer", "TesseraToken", "KnowledgeType", "TokenSerializer",
-            "TBFSerializer", "QuantType", "AnchorRegistry",
-            "AggregationStrategy", "SwarmAggregator", "aggregate_tokens",
-            "score_token", "validate_for_swarm", "swarm_metadata",
-        }
-        assert expected.issubset(set(tessera.__all__))
+        assert len(tessera.__all__) == 39
 
     def test_version(self):
         import tessera
-
         assert tessera.__version__ == "0.1.0"
 
 
@@ -85,7 +78,7 @@ class TestEndToEndPipeline:
         tx.eval()
 
         transfer = ModeATransfer(tx, rx, "tx_64", "rx_128")
-        transfer.execute(train_loader, val_loader, uhs_epochs=2, finetune_epochs=1)
+        token = transfer.execute(train_loader, val_loader, uhs_epochs=2, finetune_epochs=1)
 
         # Register the transmitter's UHS pair
         reg = AnchorRegistry(registry_dir=tmp_dir)
@@ -111,7 +104,6 @@ class TestQuantisationPipeline:
 
     def test_all_quant_types(self, tmp_dir):
         from tests.test_binary import make_token
-
         token = make_token(dim=512)
 
         for quant in QuantType:

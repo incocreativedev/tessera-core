@@ -1,0 +1,1336 @@
+From 85a0905a360692d02c6911979a7f49a77246c073 Mon Sep 17 00:00:00 2001
+From: Kirk <kirk@incocreative.com>
+Date: Sun, 22 Feb 2026 06:35:57 +0000
+Subject: [PATCH] Merge Cursor swarm round-trip architecture: policy, credits,
+ robust aggregation (178/178 tests)
+
+Add governance layer (policy.py), utility scoring and credit ledger
+(credits.py), ROBUST_WEIGHTED_MEAN aggregation strategy with Huber-style
+cosine clipping, plus swarm_metadata() and validate_for_swarm() helpers.
+39 public exports, 54 new tests.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+---
+ tessera/__init__.py            |  28 ++-
+ tessera/credits.py             | 317 +++++++++++++++++++++++++++++++++
+ tessera/policy.py              | 177 ++++++++++++++++++
+ tessera/swarm.py               | 124 +++++++++++++
+ tests/test_credits.py          | 245 +++++++++++++++++++++++++
+ tests/test_integration.py      |   2 +-
+ tests/test_policy.py           | 199 +++++++++++++++++++++
+ tests/test_swarm_aggregator.py | 117 +++++++++++-
+ 8 files changed, 1206 insertions(+), 3 deletions(-)
+ create mode 100644 tessera/credits.py
+ create mode 100644 tessera/policy.py
+ create mode 100644 tests/test_credits.py
+ create mode 100644 tests/test_policy.py
+
+diff --git a/tessera/__init__.py b/tessera/__init__.py
+index e09c0b1..0f12418 100644
+--- a/tessera/__init__.py
++++ b/tessera/__init__.py
+@@ -23,7 +23,16 @@ from .mode_b import ModeBTransfer
+ from .mode_c import ModeCTransfer
+ from .mode_d import ModeDTransfer
+ from .swap import SWAPProjection
+-from .swarm import SwarmAggregator, AggregationStrategy
++from .swarm import SwarmAggregator, AggregationStrategy, swarm_metadata, validate_for_swarm
++from .policy import (
++    accept_token, check_round_acceptance, RoundPolicy,
++    MIN_ACCEPTED_CONTRIBUTORS, MAX_CONTRIBUTOR_WEIGHT_FRACTION,
++)
++from .credits import (
++    CreditEntry, CreditsLedger, UTILITY_WEIGHTS,
++    compute_quality_score, compute_novelty_score,
++    compute_freshness_score, compute_reliability_score, compute_utility,
++)
+ from .drift import DriftMeasure
+ from .privacy import DifferentialPrivacy
+ from .gates import ProjectionType, ProjectionHint
+@@ -52,6 +61,23 @@ __all__ = [
+     "SWAPProjection",
+     "SwarmAggregator",
+     "AggregationStrategy",
++    "swarm_metadata",
++    "validate_for_swarm",
++    # Policy & Governance
++    "accept_token",
++    "check_round_acceptance",
++    "RoundPolicy",
++    "MIN_ACCEPTED_CONTRIBUTORS",
++    "MAX_CONTRIBUTOR_WEIGHT_FRACTION",
++    # Credits & Utility
++    "CreditEntry",
++    "CreditsLedger",
++    "UTILITY_WEIGHTS",
++    "compute_quality_score",
++    "compute_novelty_score",
++    "compute_freshness_score",
++    "compute_reliability_score",
++    "compute_utility",
+     # Measurement
+     "DriftMeasure",
+     # Privacy
+diff --git a/tessera/credits.py b/tessera/credits.py
+new file mode 100644
+index 0000000..42f56db
+--- /dev/null
++++ b/tessera/credits.py
+@@ -0,0 +1,317 @@
++"""
++tessera.credits — Utility scoring and credit ledger for swarm contributors.
++
++Implements quality-weighted credits per the Codex v1 spec:
++    utility = 0.35*quality + 0.25*novelty + 0.20*freshness + 0.20*reliability
++
++Contributors earn credits proportional to their utility scores. Credits
++map to free-usage tiers (rolling 30-day window).
++
++Abuse guard: per-contributor max 15% of total round weight (enforced by
++policy.py, not here).
++"""
++
++import datetime
++import math
++from dataclasses import dataclass, field
++from typing import Dict, List, Optional
++
++import numpy as np
++
++
++# ── v1 utility weights ───────────────────────────────────────────────────
++
++UTILITY_WEIGHTS: Dict[str, float] = {
++    "quality": 0.35,
++    "novelty": 0.25,
++    "freshness": 0.20,
++    "reliability": 0.20,
++}
++"""Default weights for the four utility components."""
++
++
++# ── Credit ledger entry ──────────────────────────────────────────────────
++
++@dataclass
++class CreditEntry:
++    """Single credit ledger record for one contributor in one round."""
++
++    contributor_id: str
++    swarm_round_id: str
++    utility_score: float
++    quality_score: float
++    novelty_score: float
++    freshness_score: float
++    reliability_score: float
++    credits_awarded: float
++    timestamp: str = field(
++        default_factory=lambda: datetime.datetime.now(
++            datetime.timezone.utc
++        ).isoformat()
++    )
++    notes: Optional[str] = None
++
++    def to_dict(self) -> dict:
++        """Serialise to a JSON-compatible dictionary."""
++        return {
++            "contributor_id": self.contributor_id,
++            "swarm_round_id": self.swarm_round_id,
++            "utility_score": self.utility_score,
++            "quality_score": self.quality_score,
++            "novelty_score": self.novelty_score,
++            "freshness_score": self.freshness_score,
++            "reliability_score": self.reliability_score,
++            "credits_awarded": self.credits_awarded,
++            "timestamp": self.timestamp,
++            "notes": self.notes,
++        }
++
++    @classmethod
++    def from_dict(cls, data: dict) -> "CreditEntry":
++        """Reconstruct from a dictionary."""
++        return cls(**data)
++
++
++# ── Scoring functions ────────────────────────────────────────────────────
++
++def compute_quality_score(drift: float, recon_error: float = 0.0) -> float:
++    """
++    Quality from inverse drift and reconstruction error.
++
++    quality = 1.0 / (1.0 + drift + recon_error)
++
++    Lower drift/error → higher quality. Returns float in [0, 1].
++    """
++    return 1.0 / (1.0 + abs(drift) + abs(recon_error))
++
++
++def compute_novelty_score(
++    token_hub: np.ndarray,
++    prior_centroid: Optional[np.ndarray],
++) -> float:
++    """
++    Novelty from cosine distance to prior round centroid.
++
++    If no prior centroid exists, returns 1.0 (full novelty — first round).
++    Returns float in [0, 1].
++    """
++    if prior_centroid is None:
++        return 1.0
++
++    token_hub = np.asarray(token_hub, dtype=np.float64)
++    prior_centroid = np.asarray(prior_centroid, dtype=np.float64)
++
++    norm_t = np.linalg.norm(token_hub)
++    norm_c = np.linalg.norm(prior_centroid)
++
++    if norm_t < 1e-10 or norm_c < 1e-10:
++        return 1.0
++
++    cosine_sim = float(
++        np.dot(token_hub, prior_centroid) / (norm_t * norm_c)
++    )
++    # Clamp to [-1, 1] for numerical safety
++    cosine_sim = max(-1.0, min(1.0, cosine_sim))
++
++    # Cosine distance in [0, 1]: 0 = identical, 1 = orthogonal
++    return (1.0 - cosine_sim) / 2.0
++
++
++def compute_freshness_score(
++    token_timestamp: str,
++    window_hours: int = 24,
++) -> float:
++    """
++    Freshness from recency within a time window.
++
++    freshness = exp(-age_hours / window_hours) if age < window_hours else 0.0
++
++    Full credit for very recent tokens; exponential decay over the window.
++    Returns float in [0, 1].
++    """
++    try:
++        ts = datetime.datetime.fromisoformat(token_timestamp)
++    except (ValueError, TypeError):
++        return 0.0
++
++    # Ensure timezone-aware
++    if ts.tzinfo is None:
++        ts = ts.replace(tzinfo=datetime.timezone.utc)
++
++    now = datetime.datetime.now(datetime.timezone.utc)
++    age_hours = (now - ts).total_seconds() / 3600.0
++
++    if age_hours < 0:
++        # Future timestamp — treat as fresh
++        return 1.0
++
++    if age_hours > window_hours:
++        return 0.0
++
++    return math.exp(-age_hours / window_hours)
++
++
++def compute_reliability_score(
++    contributor_id: str,
++    ledger: list,
++) -> float:
++    """
++    Reliability from contributor's historical acceptance ratio.
++
++    reliability = accepted_rounds / total_rounds_participated
++
++    If contributor has no history, returns 0.5 (neutral prior).
++    Accepts either a list of CreditEntry objects or a list of dicts.
++    Returns float in [0, 1].
++    """
++    entries = []
++    for entry in ledger:
++        if isinstance(entry, CreditEntry):
++            if entry.contributor_id == contributor_id:
++                entries.append(entry)
++        elif isinstance(entry, dict):
++            if entry.get("contributor_id") == contributor_id:
++                entries.append(entry)
++
++    if not entries:
++        return 0.5  # Neutral prior for new contributors
++
++    # All entries in the ledger are "accepted" (you only get a credit entry
++    # if your token was accepted). So reliability = 1.0 if all rounds
++    # resulted in credit. For a more nuanced version, compare against
++    # total submission attempts — but we only track accepted here.
++    return 1.0
++
++
++def compute_utility(
++    quality: float,
++    novelty: float,
++    freshness: float,
++    reliability: float,
++    weights: Optional[Dict[str, float]] = None,
++) -> float:
++    """
++    Composite utility score: weighted sum of four components.
++
++    Default: 0.35*quality + 0.25*novelty + 0.20*freshness + 0.20*reliability
++
++    All inputs and output in [0, 1].
++    """
++    w = weights or UTILITY_WEIGHTS
++    utility = (
++        w["quality"] * quality
++        + w["novelty"] * novelty
++        + w["freshness"] * freshness
++        + w["reliability"] * reliability
++    )
++    return max(0.0, min(1.0, utility))
++
++
++# ── Credits ledger ───────────────────────────────────────────────────────
++
++class CreditsLedger:
++    """
++    Append-only ledger of contributor credits and utility.
++
++    Supports:
++        - Recording credit entries
++        - Querying total credits per contributor
++        - Rolling 30-day credit windows (for free-usage tiers)
++        - JSON serialisation/deserialisation
++
++    Usage:
++        ledger = CreditsLedger()
++        entry = ledger.record_credit(
++            contributor_id="site_a",
++            swarm_round_id="round_042",
++            utility_score=0.82,
++            quality_score=0.90,
++            novelty_score=0.75,
++            freshness_score=0.95,
++            reliability_score=1.0,
++        )
++        print(ledger.rolling_30_day_credits("site_a"))
++    """
++
++    def __init__(self):
++        self.entries: List[CreditEntry] = []
++
++    def record_credit(
++        self,
++        contributor_id: str,
++        swarm_round_id: str,
++        utility_score: float,
++        quality_score: float,
++        novelty_score: float,
++        freshness_score: float,
++        reliability_score: float,
++        max_credits_per_entry: Optional[float] = None,
++    ) -> CreditEntry:
++        """
++        Create and store a credit entry.
++
++        credits_awarded = utility_score (capped if max_credits_per_entry set).
++        """
++        credits = utility_score
++        if max_credits_per_entry is not None:
++            credits = min(credits, max_credits_per_entry)
++
++        entry = CreditEntry(
++            contributor_id=contributor_id,
++            swarm_round_id=swarm_round_id,
++            utility_score=utility_score,
++            quality_score=quality_score,
++            novelty_score=novelty_score,
++            freshness_score=freshness_score,
++            reliability_score=reliability_score,
++            credits_awarded=credits,
++        )
++        self.entries.append(entry)
++        return entry
++
++    def get_contributor_credits(self, contributor_id: str) -> float:
++        """Sum of all credits ever awarded to this contributor."""
++        return sum(
++            e.credits_awarded
++            for e in self.entries
++            if e.contributor_id == contributor_id
++        )
++
++    def rolling_30_day_credits(self, contributor_id: str) -> float:
++        """Sum of credits from entries in the last 30 days."""
++        cutoff = datetime.datetime.now(
++            datetime.timezone.utc
++        ) - datetime.timedelta(days=30)
++
++        total = 0.0
++        for e in self.entries:
++            if e.contributor_id != contributor_id:
++                continue
++
++            try:
++                ts = datetime.datetime.fromisoformat(e.timestamp)
++                if ts.tzinfo is None:
++                    ts = ts.replace(tzinfo=datetime.timezone.utc)
++                if ts >= cutoff:
++                    total += e.credits_awarded
++            except (ValueError, TypeError):
++                continue
++
++        return total
++
++    def to_list(self) -> List[dict]:
++        """Serialise ledger to list of dicts."""
++        return [e.to_dict() for e in self.entries]
++
++    @classmethod
++    def from_list(cls, data: List[dict]) -> "CreditsLedger":
++        """Deserialise ledger from list of dicts."""
++        ledger = cls()
++        ledger.entries = [CreditEntry.from_dict(d) for d in data]
++        return ledger
++
++    def __len__(self) -> int:
++        return len(self.entries)
++
++    def __repr__(self) -> str:
++        return f"CreditsLedger(entries={len(self.entries)})"
+diff --git a/tessera/policy.py b/tessera/policy.py
+new file mode 100644
+index 0000000..1871348
+--- /dev/null
++++ b/tessera/policy.py
+@@ -0,0 +1,177 @@
++"""
++tessera.policy — Governance and acceptance rules for swarm rounds.
++
++Defines the policy layer that gates which tokens are accepted into a
++swarm aggregation round and validates round-level constraints (minimum
++contributors, per-contributor weight caps).
++
++v1 defaults (Ag/Mining pilot):
++    - Minimum 5 unique contributors per round
++    - No single contributor may exceed 15% of total round weight
++    - All tokens must carry swarm metadata (round ID, contributor ID,
++      local data fingerprint)
++    - Valid privacy fields (ε > 0, 0 < δ < 1)
++    - Non-empty UHS vector
++"""
++
++from dataclasses import dataclass, field
++from typing import List, Optional, Set, Tuple
++
++from .token import TesseraToken
++
++# ── v1 constants ──────────────────────────────────────────────────────────
++
++MIN_ACCEPTED_CONTRIBUTORS: int = 5
++"""Minimum unique contributors required to run an aggregation round."""
++
++MAX_CONTRIBUTOR_WEIGHT_FRACTION: float = 0.15
++"""Maximum fraction of round weight any single contributor may hold."""
++
++
++# ── Token-level acceptance ────────────────────────────────────────────────
++
++def accept_token(token: TesseraToken) -> Tuple[bool, str]:
++    """
++    Validate a single token for swarm round acceptance.
++
++    Checks (in order):
++        1. custom_metadata contains 'swarm_round_id' (non-empty str)
++        2. custom_metadata contains 'contributor_id' (non-empty str)
++        3. custom_metadata contains 'local_data_fingerprint' (non-empty str)
++        4. privacy_epsilon > 0
++        5. privacy_delta in (0, 1)
++        6. uhs_vector is non-empty
++
++    Returns:
++        (True, "") if accepted, (False, reason) if rejected.
++    """
++    meta = token.custom_metadata or {}
++
++    # Required metadata fields
++    if not meta.get("swarm_round_id"):
++        return False, "Missing or empty 'swarm_round_id' in custom_metadata."
++
++    if not meta.get("contributor_id"):
++        return False, "Missing or empty 'contributor_id' in custom_metadata."
++
++    if not meta.get("local_data_fingerprint"):
++        return False, "Missing or empty 'local_data_fingerprint' in custom_metadata."
++
++    # Privacy fields
++    if token.privacy_epsilon <= 0:
++        return False, (
++            f"Invalid privacy_epsilon={token.privacy_epsilon}; must be > 0."
++        )
++
++    if not (0 < token.privacy_delta < 1):
++        return False, (
++            f"Invalid privacy_delta={token.privacy_delta}; must be in (0, 1)."
++        )
++
++    # UHS vector
++    if not token.uhs_vector or len(token.uhs_vector) == 0:
++        return False, "UHS vector is empty."
++
++    return True, ""
++
++
++# ── Round-level acceptance ────────────────────────────────────────────────
++
++def check_round_acceptance(
++    tokens: List[TesseraToken],
++    min_contributors: int = MIN_ACCEPTED_CONTRIBUTORS,
++    max_weight_fraction: float = MAX_CONTRIBUTOR_WEIGHT_FRACTION,
++) -> Tuple[bool, str]:
++    """
++    Validate a collection of tokens for a complete swarm round.
++
++    Checks:
++        1. Every token passes accept_token() individually.
++        2. At least min_contributors unique contributor_ids.
++        3. No single contributor holds > max_weight_fraction of total tokens.
++
++    Returns:
++        (True, "") if round is valid, (False, reason) if not.
++    """
++    if not tokens:
++        return False, "No tokens provided."
++
++    # Individual validation
++    for i, t in enumerate(tokens):
++        ok, reason = accept_token(t)
++        if not ok:
++            return False, f"Token {i} rejected: {reason}"
++
++    # Count unique contributors
++    contributor_ids = [
++        t.custom_metadata.get("contributor_id", "") for t in tokens
++    ]
++    unique_contributors = set(contributor_ids)
++
++    if len(unique_contributors) < min_contributors:
++        return False, (
++            f"Only {len(unique_contributors)} unique contributors; "
++            f"minimum is {min_contributors}."
++        )
++
++    # Weight cap: each contributor's token count / total tokens
++    n_total = len(tokens)
++    from collections import Counter
++    counts = Counter(contributor_ids)
++    for cid, count in counts.items():
++        fraction = count / n_total
++        if fraction > max_weight_fraction:
++            return False, (
++                f"Contributor '{cid}' holds {fraction:.1%} of round weight "
++                f"({count}/{n_total} tokens); cap is {max_weight_fraction:.0%}."
++            )
++
++    return True, ""
++
++
++# ── Round policy encapsulation ────────────────────────────────────────────
++
++@dataclass
++class RoundPolicy:
++    """
++    Encapsulates governance rules for a single swarm round.
++
++    Can be customised per-round to override defaults (e.g. for pilot
++    rounds with fewer contributors or stricter weight caps).
++
++    Usage:
++        policy = RoundPolicy(round_id="round_042", min_contributors=3)
++        ok, reason = policy.validate_round(tokens)
++    """
++
++    round_id: str
++    min_contributors: int = MIN_ACCEPTED_CONTRIBUTORS
++    max_weight_per_contributor: float = MAX_CONTRIBUTOR_WEIGHT_FRACTION
++    allowed_contributors: Optional[Set[str]] = field(default=None)
++
++    def can_accept_token(self, token: TesseraToken) -> Tuple[bool, str]:
++        """Check if a single token is acceptable under this policy."""
++        ok, reason = accept_token(token)
++        if not ok:
++            return ok, reason
++
++        # Optional allowlist
++        if self.allowed_contributors is not None:
++            cid = token.custom_metadata.get("contributor_id", "")
++            if cid not in self.allowed_contributors:
++                return False, (
++                    f"Contributor '{cid}' not in allowed set for "
++                    f"round {self.round_id}."
++                )
++
++        return True, ""
++
++    def validate_round(
++        self, tokens: List[TesseraToken]
++    ) -> Tuple[bool, str]:
++        """Validate a full round against this policy."""
++        return check_round_acceptance(
++            tokens,
++            min_contributors=self.min_contributors,
++            max_weight_fraction=self.max_weight_per_contributor,
++        )
+diff --git a/tessera/swarm.py b/tessera/swarm.py
+index 8ac9120..1afd376 100644
+--- a/tessera/swarm.py
++++ b/tessera/swarm.py
+@@ -48,6 +48,7 @@ class AggregationStrategy(Enum):
+     WEIGHTED_MEAN = "weighted_mean" # Weight by inverse-drift or custom
+     TRIMMED_MEAN = "trimmed_mean"   # Drop outlier tails (Byzantine resilience)
+     MEDIAN = "median"               # Per-dimension median (most robust)
++    ROBUST_WEIGHTED_MEAN = "robust_weighted_mean"  # Huber-style cosine clipping + weighted mean
+ 
+ 
+ class SwarmAggregator:
+@@ -426,6 +427,10 @@ class SwarmAggregator:
+             agg = self._trimmed_mean_aggregation(hub_matrix, trimmed_fraction)
+         elif strategy == AggregationStrategy.MEDIAN:
+             agg = self._median_aggregation(hub_matrix)
++        elif strategy == AggregationStrategy.ROBUST_WEIGHTED_MEAN:
++            if weights is None:
++                weights = [1.0 / len(hub_matrix)] * len(hub_matrix)
++            agg = self._robust_weighted_mean_aggregation(hub_matrix, weights)
+         else:
+             raise ValueError(f"Unknown aggregation strategy: {strategy}")
+ 
+@@ -472,6 +477,60 @@ class SwarmAggregator:
+         """Per-dimension median (most robust aggregation)."""
+         return np.median(hub_matrix, axis=0)
+ 
++    def _robust_weighted_mean_aggregation(
++        self,
++        hub_matrix: np.ndarray,
++        weights: List[float],
++        clip_percentile: float = 90.0,
++    ) -> np.ndarray:
++        """
++        Huber-style robust weighted mean with cosine-distance clipping.
++
++        1. Compute per-dimension median as the robust centre.
++        2. Measure cosine distance from each contributor to the median.
++        3. Clip contributors whose distance exceeds the clip_percentile
++           threshold (i.e. zero their weight).
++        4. Weighted mean of surviving contributors.
++
++        Falls back to plain median if all contributors are clipped.
++        """
++        # Robust centre: per-dimension median
++        median_hub = np.median(hub_matrix, axis=0)
++
++        # Cosine distances to median
++        median_norm = np.linalg.norm(median_hub)
++        if median_norm < 1e-10:
++            # Degenerate — fall back to weighted mean
++            return self._weighted_mean_aggregation(hub_matrix, weights)
++
++        distances = np.zeros(hub_matrix.shape[0])
++        for i in range(hub_matrix.shape[0]):
++            row_norm = np.linalg.norm(hub_matrix[i])
++            if row_norm < 1e-10:
++                distances[i] = 1.0  # maximally distant
++            else:
++                cos_sim = float(
++                    np.dot(hub_matrix[i], median_hub) / (row_norm * median_norm)
++                )
++                cos_sim = max(-1.0, min(1.0, cos_sim))
++                distances[i] = (1.0 - cos_sim) / 2.0  # [0, 1]
++
++        # Clip threshold at the given percentile
++        threshold = np.percentile(distances, clip_percentile)
++
++        # Zero weights for outliers
++        w = np.array(weights, dtype=np.float64)
++        for i in range(len(w)):
++            if distances[i] > threshold:
++                w[i] = 0.0
++
++        if w.sum() < 1e-10:
++            # All clipped — fall back to median
++            return median_hub
++
++        w = w / w.sum()
++        return (hub_matrix * w[:, np.newaxis]).sum(axis=0)
++
+     def _auto_weights(self, tokens: List[TesseraToken]) -> List[float]:
+         """
+         Auto-compute weights for WEIGHTED_MEAN.
+@@ -646,3 +705,68 @@ class SwarmAggregator:
+         composed_delta = sum(deltas)
+ 
+         return composed_epsilon, composed_delta
++
++
++# ══════════════════════════════════════════════════════════════════════════
++#  Module-level helpers
++# ══════════════════════════════════════════════════════════════════════════
++
++def swarm_metadata(
++    swarm_round_id: str,
++    contributor_id: str,
++    local_data_fingerprint: str,
++    *,
++    extra_signals: Optional[Dict[str, object]] = None,
++) -> dict:
++    """
++    Build the standard custom_metadata dict for a swarm contribution token.
++
++    Every token participating in a swarm round **must** carry these three
++    fields in its custom_metadata.  This helper ensures the right keys and
++    adds any optional extra signals.
++
++    Usage:
++        meta = swarm_metadata("round_042", "site_a", "sha256:abc...")
++        token.custom_metadata = meta
++
++    Returns:
++        Dictionary ready to assign to TesseraToken.custom_metadata.
++    """
++    meta: dict = {
++        "swarm_round_id": swarm_round_id,
++        "contributor_id": contributor_id,
++        "local_data_fingerprint": local_data_fingerprint,
++    }
++    if extra_signals:
++        meta.update(extra_signals)
++    return meta
++
++
++def validate_for_swarm(token: TesseraToken) -> Tuple[bool, str]:
++    """
++    Quick-check whether a token has the required swarm fields.
++
++    Validates:
++        1. custom_metadata contains non-empty 'swarm_round_id'
++        2. custom_metadata contains non-empty 'contributor_id'
++        3. custom_metadata contains non-empty 'local_data_fingerprint'
++        4. uhs_vector is non-empty
++
++    Returns:
++        (True, "") if valid, (False, reason) if not.
++    """
++    meta = token.custom_metadata or {}
++
++    if not meta.get("swarm_round_id"):
++        return False, "Missing or empty 'swarm_round_id' in custom_metadata."
++
++    if not meta.get("contributor_id"):
++        return False, "Missing or empty 'contributor_id' in custom_metadata."
++
++    if not meta.get("local_data_fingerprint"):
++        return False, "Missing or empty 'local_data_fingerprint' in custom_metadata."
++
++    if not token.uhs_vector or len(token.uhs_vector) == 0:
++        return False, "UHS vector is empty."
++
++    return True, ""
+diff --git a/tests/test_credits.py b/tests/test_credits.py
+new file mode 100644
+index 0000000..3644eb1
+--- /dev/null
++++ b/tests/test_credits.py
+@@ -0,0 +1,245 @@
++"""
++Tests for tessera.credits — utility scoring and credit ledger.
++"""
++
++import datetime
++import pytest
++import numpy as np
++
++from tessera.credits import (
++    UTILITY_WEIGHTS,
++    CreditEntry,
++    CreditsLedger,
++    compute_quality_score,
++    compute_novelty_score,
++    compute_freshness_score,
++    compute_reliability_score,
++    compute_utility,
++)
++
++
++# ── Quality ─────────────────────────────────────────────────────────────
++
++class TestQualityScore:
++    def test_deterministic(self):
++        assert compute_quality_score(0.1, 0.05) == compute_quality_score(0.1, 0.05)
++
++    def test_in_range(self):
++        score = compute_quality_score(0.5, 0.3)
++        assert 0.0 <= score <= 1.0
++
++    def test_inverse_relationship(self):
++        high = compute_quality_score(0.0, 0.0)
++        low = compute_quality_score(1.0, 1.0)
++        assert high > low
++
++    def test_zero_drift_and_error_is_one(self):
++        assert compute_quality_score(0.0, 0.0) == 1.0
++
++
++# ── Novelty ─────────────────────────────────────────────────────────────
++
++class TestNoveltyScore:
++    def test_no_prior_centroid_returns_one(self):
++        hub = np.random.randn(64)
++        assert compute_novelty_score(hub, None) == 1.0
++
++    def test_identical_vectors_returns_zero(self):
++        hub = np.ones(64)
++        score = compute_novelty_score(hub, hub.copy())
++        assert score == pytest.approx(0.0, abs=1e-6)
++
++    def test_orthogonal_vectors_returns_half(self):
++        a = np.zeros(64)
++        b = np.zeros(64)
++        a[0] = 1.0
++        b[1] = 1.0
++        score = compute_novelty_score(a, b)
++        assert score == pytest.approx(0.5, abs=1e-6)
++
++    def test_in_range(self):
++        hub = np.random.randn(64)
++        centroid = np.random.randn(64)
++        score = compute_novelty_score(hub, centroid)
++        assert 0.0 <= score <= 1.0
++
++
++# ── Freshness ───────────────────────────────────────────────────────────
++
++class TestFreshnessScore:
++    def test_recent_is_high(self):
++        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
++        score = compute_freshness_score(now, window_hours=24)
++        assert score > 0.9
++
++    def test_old_is_zero(self):
++        old = (
++            datetime.datetime.now(datetime.timezone.utc)
++            - datetime.timedelta(hours=48)
++        ).isoformat()
++        score = compute_freshness_score(old, window_hours=24)
++        assert score == 0.0
++
++    def test_invalid_timestamp(self):
++        assert compute_freshness_score("not-a-date") == 0.0
++
++    def test_in_range(self):
++        ts = (
++            datetime.datetime.now(datetime.timezone.utc)
++            - datetime.timedelta(hours=6)
++        ).isoformat()
++        score = compute_freshness_score(ts, window_hours=24)
++        assert 0.0 <= score <= 1.0
++
++
++# ── Reliability ─────────────────────────────────────────────────────────
++
++class TestReliabilityScore:
++    def test_no_history_returns_half(self):
++        assert compute_reliability_score("new_site", []) == 0.5
++
++    def test_with_history_returns_one(self):
++        entry = CreditEntry(
++            contributor_id="site_a",
++            swarm_round_id="round_001",
++            utility_score=0.8,
++            quality_score=0.9,
++            novelty_score=0.7,
++            freshness_score=0.95,
++            reliability_score=1.0,
++            credits_awarded=0.8,
++        )
++        assert compute_reliability_score("site_a", [entry]) == 1.0
++
++    def test_ignores_other_contributors(self):
++        entry = CreditEntry(
++            contributor_id="site_b",
++            swarm_round_id="round_001",
++            utility_score=0.8,
++            quality_score=0.9,
++            novelty_score=0.7,
++            freshness_score=0.95,
++            reliability_score=1.0,
++            credits_awarded=0.8,
++        )
++        assert compute_reliability_score("site_a", [entry]) == 0.5
++
++
++# ── Utility ─────────────────────────────────────────────────────────────
++
++class TestComputeUtility:
++    def test_deterministic(self):
++        u1 = compute_utility(0.9, 0.7, 0.8, 1.0)
++        u2 = compute_utility(0.9, 0.7, 0.8, 1.0)
++        assert u1 == u2
++
++    def test_in_range(self):
++        u = compute_utility(0.5, 0.5, 0.5, 0.5)
++        assert 0.0 <= u <= 1.0
++
++    def test_all_ones_is_one(self):
++        assert compute_utility(1.0, 1.0, 1.0, 1.0) == pytest.approx(1.0)
++
++    def test_all_zeros_is_zero(self):
++        assert compute_utility(0.0, 0.0, 0.0, 0.0) == pytest.approx(0.0)
++
++    def test_weighted_correctly(self):
++        # Only quality = 1.0, rest zero → utility should be 0.35
++        u = compute_utility(1.0, 0.0, 0.0, 0.0)
++        assert u == pytest.approx(UTILITY_WEIGHTS["quality"])
++
++
++# ── CreditEntry ─────────────────────────────────────────────────────────
++
++class TestCreditEntry:
++    def test_to_dict_roundtrip(self):
++        entry = CreditEntry(
++            contributor_id="site_a",
++            swarm_round_id="round_001",
++            utility_score=0.82,
++            quality_score=0.90,
++            novelty_score=0.75,
++            freshness_score=0.95,
++            reliability_score=1.0,
++            credits_awarded=0.82,
++        )
++        d = entry.to_dict()
++        restored = CreditEntry.from_dict(d)
++        assert restored.contributor_id == entry.contributor_id
++        assert restored.credits_awarded == entry.credits_awarded
++
++
++# ── CreditsLedger ───────────────────────────────────────────────────────
++
++class TestCreditsLedger:
++    def test_record_and_sum(self):
++        ledger = CreditsLedger()
++        ledger.record_credit(
++            contributor_id="site_a",
++            swarm_round_id="round_001",
++            utility_score=0.8,
++            quality_score=0.9,
++            novelty_score=0.7,
++            freshness_score=0.95,
++            reliability_score=1.0,
++        )
++        ledger.record_credit(
++            contributor_id="site_a",
++            swarm_round_id="round_002",
++            utility_score=0.5,
++            quality_score=0.6,
++            novelty_score=0.4,
++            freshness_score=0.5,
++            reliability_score=1.0,
++        )
++        total = ledger.get_contributor_credits("site_a")
++        assert total == pytest.approx(1.3)
++
++    def test_rolling_30_day(self):
++        ledger = CreditsLedger()
++        entry = ledger.record_credit(
++            contributor_id="site_a",
++            swarm_round_id="round_001",
++            utility_score=0.8,
++            quality_score=0.9,
++            novelty_score=0.7,
++            freshness_score=0.95,
++            reliability_score=1.0,
++        )
++        rolling = ledger.rolling_30_day_credits("site_a")
++        assert rolling == pytest.approx(0.8)
++
++    def test_serialise_roundtrip(self):
++        ledger = CreditsLedger()
++        ledger.record_credit(
++            contributor_id="site_a",
++            swarm_round_id="round_001",
++            utility_score=0.8,
++            quality_score=0.9,
++            novelty_score=0.7,
++            freshness_score=0.95,
++            reliability_score=1.0,
++        )
++        data = ledger.to_list()
++        restored = CreditsLedger.from_list(data)
++        assert len(restored) == 1
++        assert restored.get_contributor_credits("site_a") == pytest.approx(0.8)
++
++    def test_max_credits_per_entry(self):
++        ledger = CreditsLedger()
++        entry = ledger.record_credit(
++            contributor_id="site_a",
++            swarm_round_id="round_001",
++            utility_score=0.95,
++            quality_score=0.9,
++            novelty_score=0.7,
++            freshness_score=0.95,
++            reliability_score=1.0,
++            max_credits_per_entry=0.5,
++        )
++        assert entry.credits_awarded == 0.5
++
++    def test_len_and_repr(self):
++        ledger = CreditsLedger()
++        assert len(ledger) == 0
++        assert "0" in repr(ledger)
+diff --git a/tests/test_integration.py b/tests/test_integration.py
+index 594f6bf..429879f 100644
+--- a/tests/test_integration.py
++++ b/tests/test_integration.py
+@@ -18,7 +18,7 @@ class TestPublicAPI:
+ 
+     def test_all_exports(self):
+         import tessera
+-        assert len(tessera.__all__) == 24
++        assert len(tessera.__all__) == 39
+ 
+     def test_version(self):
+         import tessera
+diff --git a/tests/test_policy.py b/tests/test_policy.py
+new file mode 100644
+index 0000000..a90f53f
+--- /dev/null
++++ b/tests/test_policy.py
+@@ -0,0 +1,199 @@
++"""
++Tests for tessera.policy — governance rules and token acceptance.
++"""
++
++import pytest
++import numpy as np
++
++from tessera.token import TesseraToken, KnowledgeType
++from tessera.policy import (
++    accept_token,
++    check_round_acceptance,
++    RoundPolicy,
++    MIN_ACCEPTED_CONTRIBUTORS,
++    MAX_CONTRIBUTOR_WEIGHT_FRACTION,
++)
++
++
++# ── Helpers ─────────────────────────────────────────────────────────────
++
++def _make_swarm_token(
++    contributor_id: str = "site_a",
++    swarm_round_id: str = "round_001",
++    local_data_fingerprint: str = "sha256:abc123",
++    privacy_epsilon: float = 1.0,
++    privacy_delta: float = 1e-5,
++    uhs_dim: int = 2048,
++) -> TesseraToken:
++    """Build a valid swarm-ready token for testing."""
++    return TesseraToken(
++        knowledge_type=KnowledgeType.SWARM,
++        uhs_vector=np.random.randn(uhs_dim).tolist(),
++        modality_weights={"A": 1.0},
++        correlation_map={},
++        lineage_dag={"nodes": [], "root": contributor_id},
++        privacy_epsilon=privacy_epsilon,
++        privacy_delta=privacy_delta,
++        source_model_id=contributor_id,
++        custom_metadata={
++            "swarm_round_id": swarm_round_id,
++            "contributor_id": contributor_id,
++            "local_data_fingerprint": local_data_fingerprint,
++        },
++    )
++
++
++# ── Token-level acceptance ──────────────────────────────────────────────
++
++class TestAcceptToken:
++    """Tests for accept_token()."""
++
++    def test_valid_token_accepted(self):
++        token = _make_swarm_token()
++        ok, reason = accept_token(token)
++        assert ok is True
++        assert reason == ""
++
++    def test_missing_swarm_round_id(self):
++        token = _make_swarm_token()
++        del token.custom_metadata["swarm_round_id"]
++        ok, reason = accept_token(token)
++        assert ok is False
++        assert "swarm_round_id" in reason
++
++    def test_missing_contributor_id(self):
++        token = _make_swarm_token()
++        del token.custom_metadata["contributor_id"]
++        ok, reason = accept_token(token)
++        assert ok is False
++        assert "contributor_id" in reason
++
++    def test_missing_local_data_fingerprint(self):
++        token = _make_swarm_token()
++        del token.custom_metadata["local_data_fingerprint"]
++        ok, reason = accept_token(token)
++        assert ok is False
++        assert "local_data_fingerprint" in reason
++
++    def test_invalid_privacy_epsilon(self):
++        token = _make_swarm_token(privacy_epsilon=0.0)
++        ok, reason = accept_token(token)
++        assert ok is False
++        assert "privacy_epsilon" in reason
++
++    def test_invalid_privacy_delta_zero(self):
++        token = _make_swarm_token(privacy_delta=0.0)
++        ok, reason = accept_token(token)
++        assert ok is False
++        assert "privacy_delta" in reason
++
++    def test_invalid_privacy_delta_one(self):
++        token = _make_swarm_token(privacy_delta=1.0)
++        ok, reason = accept_token(token)
++        assert ok is False
++        assert "privacy_delta" in reason
++
++    def test_empty_uhs_vector(self):
++        token = _make_swarm_token()
++        token.uhs_vector = []
++        ok, reason = accept_token(token)
++        assert ok is False
++        assert "UHS" in reason
++
++
++# ── Round-level acceptance ──────────────────────────────────────────────
++
++class TestCheckRoundAcceptance:
++    """Tests for check_round_acceptance()."""
++
++    def test_valid_round_with_seven_contributors(self):
++        # 7 contributors × 1 token each = 14.3% per contributor (< 15% cap)
++        tokens = [
++            _make_swarm_token(contributor_id=f"site_{i}")
++            for i in range(7)
++        ]
++        ok, reason = check_round_acceptance(tokens)
++        assert ok is True
++        assert reason == ""
++
++    def test_rejected_fewer_than_min_contributors(self):
++        tokens = [
++            _make_swarm_token(contributor_id=f"site_{i}")
++            for i in range(3)
++        ]
++        ok, reason = check_round_acceptance(tokens)
++        assert ok is False
++        assert "unique contributors" in reason
++
++    def test_rejected_single_contributor_exceeds_weight_cap(self):
++        # 10 tokens total: 3 from site_0 (30% > 15%) + 1 each from 7 others
++        tokens = [_make_swarm_token(contributor_id="site_0") for _ in range(3)]
++        for i in range(1, 8):
++            tokens.append(_make_swarm_token(contributor_id=f"site_{i}"))
++        ok, reason = check_round_acceptance(tokens)
++        assert ok is False
++        assert "site_0" in reason
++        assert "cap" in reason.lower() or "%" in reason
++
++    def test_no_tokens_rejected(self):
++        ok, reason = check_round_acceptance([])
++        assert ok is False
++
++    def test_custom_min_contributors(self):
++        # 7 contributors with min_contributors=3 — passes both contributor
++        # count and weight cap (each at 14.3%)
++        tokens = [
++            _make_swarm_token(contributor_id=f"site_{i}")
++            for i in range(7)
++        ]
++        ok, reason = check_round_acceptance(tokens, min_contributors=3)
++        assert ok is True
++
++
++# ── RoundPolicy ─────────────────────────────────────────────────────────
++
++class TestRoundPolicy:
++    """Tests for the RoundPolicy dataclass."""
++
++    def test_defaults(self):
++        policy = RoundPolicy(round_id="round_001")
++        assert policy.min_contributors == MIN_ACCEPTED_CONTRIBUTORS
++        assert policy.max_weight_per_contributor == MAX_CONTRIBUTOR_WEIGHT_FRACTION
++
++    def test_custom_overrides(self):
++        policy = RoundPolicy(
++            round_id="pilot_001",
++            min_contributors=3,
++            max_weight_per_contributor=0.25,
++        )
++        assert policy.min_contributors == 3
++        assert policy.max_weight_per_contributor == 0.25
++
++    def test_validate_round_delegates(self):
++        # 7 contributors, relaxed min to 2 — passes weight cap too
++        policy = RoundPolicy(round_id="round_001", min_contributors=2)
++        tokens = [
++            _make_swarm_token(contributor_id=f"site_{i}")
++            for i in range(7)
++        ]
++        ok, reason = policy.validate_round(tokens)
++        assert ok is True
++
++    def test_allowed_contributors_rejects_unlisted(self):
++        policy = RoundPolicy(
++            round_id="round_001",
++            allowed_contributors={"site_a", "site_b"},
++        )
++        token = _make_swarm_token(contributor_id="site_c")
++        ok, reason = policy.can_accept_token(token)
++        assert ok is False
++        assert "not in allowed set" in reason
++
++    def test_allowed_contributors_accepts_listed(self):
++        policy = RoundPolicy(
++            round_id="round_001",
++            allowed_contributors={"site_a", "site_b"},
++        )
++        token = _make_swarm_token(contributor_id="site_a")
++        ok, reason = policy.can_accept_token(token)
++        assert ok is True
+diff --git a/tests/test_swarm_aggregator.py b/tests/test_swarm_aggregator.py
+index b1f56d9..e1b74f0 100644
+--- a/tests/test_swarm_aggregator.py
++++ b/tests/test_swarm_aggregator.py
+@@ -4,7 +4,10 @@ import math
+ import torch
+ import pytest
+ import numpy as np
+-from tessera.swarm import SwarmAggregator, AggregationStrategy
++from tessera.swarm import (
++    SwarmAggregator, AggregationStrategy,
++    swarm_metadata, validate_for_swarm,
++)
+ from tessera.transfer import ModeATransfer
+ from tessera.token import TesseraToken, KnowledgeType, TokenSerializer
+ from tests.conftest import SmallTransformer
+@@ -377,3 +380,115 @@ class TestEdgeCases:
+         assert loaded.knowledge_type == KnowledgeType.SWARM
+         assert loaded.custom_metadata["contributor_count"] == 3
+         assert len(loaded.uhs_vector) == 2048
++
++
++# ── Robust weighted mean tests ──────────────────────────────────────────
++
++
++class TestRobustWeightedMean:
++    def test_robust_produces_valid_token(
++        self, contributor_tokens, same_size_model, train_loader, val_loader
++    ):
++        """ROBUST_WEIGHTED_MEAN strategy produces a valid SWARM token."""
++        agg = SwarmAggregator(same_size_model, "central")
++        token = agg.aggregate(
++            contributor_tokens, train_loader, val_loader,
++            aggregation_strategy=AggregationStrategy.ROBUST_WEIGHTED_MEAN,
++            uhs_epochs=2, finetune_epochs=1,
++        )
++
++        assert token.knowledge_type == KnowledgeType.SWARM
++        assert len(token.uhs_vector) == 2048
++        assert token.custom_metadata["aggregation_method"] == "robust_weighted_mean"
++
++    def test_robust_with_custom_weights(
++        self, contributor_tokens, same_size_model, train_loader, val_loader
++    ):
++        """ROBUST_WEIGHTED_MEAN works with explicit weights."""
++        agg = SwarmAggregator(same_size_model, "central")
++        n = len(contributor_tokens)
++        weights = [1.0 / n] * n
++        token = agg.aggregate(
++            contributor_tokens, train_loader, val_loader,
++            aggregation_strategy=AggregationStrategy.ROBUST_WEIGHTED_MEAN,
++            weights=weights,
++            uhs_epochs=2, finetune_epochs=1,
++        )
++
++        assert token.custom_metadata["contributor_count"] == n
++
++
++# ── Swarm metadata helper tests ─────────────────────────────────────────
++
++
++class TestSwarmMetadataHelper:
++    def test_required_fields(self):
++        """swarm_metadata() returns the three mandatory fields."""
++        meta = swarm_metadata("round_042", "site_a", "sha256:abc")
++        assert meta["swarm_round_id"] == "round_042"
++        assert meta["contributor_id"] == "site_a"
++        assert meta["local_data_fingerprint"] == "sha256:abc"
++
++    def test_extra_signals(self):
++        """Extra signals are merged into the metadata dict."""
++        meta = swarm_metadata(
++            "round_042", "site_a", "sha256:abc",
++            extra_signals={"quality_hint": 0.9, "region": "us-east"},
++        )
++        assert meta["quality_hint"] == 0.9
++        assert meta["region"] == "us-east"
++
++    def test_no_extra_signals(self):
++        """Without extra_signals, dict has exactly 3 keys."""
++        meta = swarm_metadata("round_042", "site_a", "sha256:abc")
++        assert len(meta) == 3
++
++
++# ── validate_for_swarm tests ────────────────────────────────────────────
++
++
++class TestValidateForSwarm:
++    def _make_valid_token(self) -> TesseraToken:
++        return TesseraToken(
++            knowledge_type=KnowledgeType.SWARM,
++            uhs_vector=[0.1] * 2048,
++            modality_weights={"A": 1.0},
++            correlation_map={},
++            lineage_dag={"nodes": [], "root": "x"},
++            source_model_id="site_a",
++            custom_metadata=swarm_metadata("round_001", "site_a", "sha256:abc"),
++        )
++
++    def test_valid_token_passes(self):
++        token = self._make_valid_token()
++        ok, reason = validate_for_swarm(token)
++        assert ok is True
++        assert reason == ""
++
++    def test_missing_round_id_fails(self):
++        token = self._make_valid_token()
++        del token.custom_metadata["swarm_round_id"]
++        ok, reason = validate_for_swarm(token)
++        assert ok is False
++        assert "swarm_round_id" in reason
++
++    def test_missing_contributor_id_fails(self):
++        token = self._make_valid_token()
++        del token.custom_metadata["contributor_id"]
++        ok, reason = validate_for_swarm(token)
++        assert ok is False
++        assert "contributor_id" in reason
++
++    def test_missing_fingerprint_fails(self):
++        token = self._make_valid_token()
++        del token.custom_metadata["local_data_fingerprint"]
++        ok, reason = validate_for_swarm(token)
++        assert ok is False
++        assert "local_data_fingerprint" in reason
++
++    def test_empty_uhs_fails(self):
++        token = self._make_valid_token()
++        token.uhs_vector = []
++        ok, reason = validate_for_swarm(token)
++        assert ok is False
++        assert "UHS" in reason
+-- 
+2.34.1
+

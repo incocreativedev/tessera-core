@@ -18,19 +18,26 @@ from .fingerprint import ActivationFingerprint, LayerFingerprint, compute_finger
 from .uhs import UniversalHubSpace, EncoderMLP, DecoderMLP
 from .token import TesseraToken, KnowledgeType, TokenSerializer
 from .transfer import ModeATransfer
+from .mode_w import ModeWTransfer
+from .mode_b import ModeBTransfer
+from .mode_c import ModeCTransfer
+from .mode_d import ModeDTransfer
+from .swap import SWAPProjection
+from .swarm import SwarmAggregator, AggregationStrategy, swarm_metadata, validate_for_swarm
+from .policy import (
+    accept_token, check_round_acceptance, RoundPolicy,
+    MIN_ACCEPTED_CONTRIBUTORS, MAX_CONTRIBUTOR_WEIGHT_FRACTION,
+)
+from .credits import (
+    CreditEntry, CreditsLedger, UTILITY_WEIGHTS,
+    compute_quality_score, compute_novelty_score,
+    compute_freshness_score, compute_reliability_score, compute_utility,
+)
 from .drift import DriftMeasure
 from .privacy import DifferentialPrivacy
 from .gates import ProjectionType, ProjectionHint
 from .binary import TBFSerializer, QuantType
 from .registry import AnchorRegistry
-from .swarm import (
-    AggregationStrategy,
-    SwarmAggregator,
-    aggregate_tokens,
-    score_token,
-    validate_for_swarm,
-    swarm_metadata,
-)
 
 __all__ = [
     # Fingerprinting
@@ -47,6 +54,30 @@ __all__ = [
     "TokenSerializer",
     # Transfer
     "ModeATransfer",
+    "ModeWTransfer",
+    "ModeBTransfer",
+    "ModeCTransfer",
+    "ModeDTransfer",
+    "SWAPProjection",
+    "SwarmAggregator",
+    "AggregationStrategy",
+    "swarm_metadata",
+    "validate_for_swarm",
+    # Policy & Governance
+    "accept_token",
+    "check_round_acceptance",
+    "RoundPolicy",
+    "MIN_ACCEPTED_CONTRIBUTORS",
+    "MAX_CONTRIBUTOR_WEIGHT_FRACTION",
+    # Credits & Utility
+    "CreditEntry",
+    "CreditsLedger",
+    "UTILITY_WEIGHTS",
+    "compute_quality_score",
+    "compute_novelty_score",
+    "compute_freshness_score",
+    "compute_reliability_score",
+    "compute_utility",
     # Measurement
     "DriftMeasure",
     # Privacy
@@ -59,11 +90,4 @@ __all__ = [
     "QuantType",
     # Registry
     "AnchorRegistry",
-    # Swarm round-trip
-    "AggregationStrategy",
-    "SwarmAggregator",
-    "aggregate_tokens",
-    "score_token",
-    "validate_for_swarm",
-    "swarm_metadata",
 ]

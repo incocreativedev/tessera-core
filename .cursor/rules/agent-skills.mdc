@@ -1,0 +1,13 @@
+---
+description: Cross-agent contribution rules — follow docs/AGENT_SKILLS.md; contribute, don't overwrite
+alwaysApply: true
+---
+
+# Cross-agent skills (Claude, Cursor, Codex)
+
+When working on Tessera, follow the **central agent skills** so Cursor, Claude, and Codex all contribute without overwriting each other.
+
+- **Read** `docs/AGENT_SKILLS.md` for the full reference.
+- **Principle:** Extend and improve; avoid replacing or contradicting committed behavior unless the user explicitly asks.
+- **Cursor focus:** Implementation in this repo (APIs, CLI, tests, protocol layer). Respect specs in `docs/` and existing swarm/transfer/token behavior.
+- Before large refactors or reimplementations, prefer small additive changes or documenting the proposal; let the user decide.
