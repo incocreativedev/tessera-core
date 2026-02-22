@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["python312"]
+
+[phases.install]
+cmds = [
+  "pip install --upgrade pip setuptools wheel",
+  "pip install -e '.[railway]'"
+]
+
+[start]
+cmd = "uvicorn tessera.api:app --host 0.0.0.0 --port $PORT"
