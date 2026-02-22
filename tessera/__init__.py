@@ -23,6 +23,14 @@ from .privacy import DifferentialPrivacy
 from .gates import ProjectionType, ProjectionHint
 from .binary import TBFSerializer, QuantType
 from .registry import AnchorRegistry
+from .swarm import (
+    AggregationStrategy,
+    SwarmAggregator,
+    aggregate_tokens,
+    score_token,
+    validate_for_swarm,
+    swarm_metadata,
+)
 
 __all__ = [
     # Fingerprinting
@@ -51,4 +59,11 @@ __all__ = [
     "QuantType",
     # Registry
     "AnchorRegistry",
+    # Swarm round-trip
+    "AggregationStrategy",
+    "SwarmAggregator",
+    "aggregate_tokens",
+    "score_token",
+    "validate_for_swarm",
+    "swarm_metadata",
 ]

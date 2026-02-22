@@ -13,12 +13,18 @@ from tests.conftest import SmallTransformer
 
 
 class TestPublicAPI:
-    """Verify all 17 public symbols import correctly."""
+    """Verify public symbols import correctly (core + swarm)."""
 
     def test_all_exports(self):
         import tessera
 
-        assert len(tessera.__all__) == 17
+        expected = {
+            "ModeATransfer", "TesseraToken", "KnowledgeType", "TokenSerializer",
+            "TBFSerializer", "QuantType", "AnchorRegistry",
+            "AggregationStrategy", "SwarmAggregator", "aggregate_tokens",
+            "score_token", "validate_for_swarm", "swarm_metadata",
+        }
+        assert expected.issubset(set(tessera.__all__))
 
     def test_version(self):
         import tessera

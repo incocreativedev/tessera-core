@@ -27,6 +27,7 @@ class KnowledgeType(Enum):
     WEIGHT = "WEIGHT"  # Mode W: raw parameters (same-anchor only)
     DATASET = "DATASET"  # Mode D: training data subsets + curriculum
     BEHAVIOUR = "BEHAVIOUR"  # Mode B: decision boundaries, policies, CoT
+    SWARM = "SWARM"  # Swarm round-trip: aggregated/broadcast from central model
 
 
 @dataclass
