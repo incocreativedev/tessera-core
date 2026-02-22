@@ -39,6 +39,11 @@ tessera-mcp = "tessera.mcp_server:main"
 mcp = [
     "mcp[cli]>=1.0.0",
 ]
+railway = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "python-multipart>=0.0.9",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -48,7 +53,7 @@ dev = [
     "ruff>=0.1.0",
 ]
 all = [
-    "tessera-core[dev,mcp]",
+    "tessera-core[dev,mcp,railway]",
 ]
 
 [project.urls]
