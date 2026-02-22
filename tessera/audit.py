@@ -205,6 +205,14 @@ class AuditLog:
         meta = token.custom_metadata or {}
         contributor_id = meta.get("contributor_id", token.source_model_id or "unknown")
         event_type = AuditEventType.TOKEN_ACCEPTED if accepted else AuditEventType.TOKEN_REJECTED
+        from .signing import is_signed, verify_token_signature
+
+        signed = is_signed(token)
+        sig_valid = False
+        if signed:
+            sig_ok, _ = verify_token_signature(token)
+            sig_valid = sig_ok
+
         details = {
             "accepted": accepted,
             "reason": reason,
@@ -217,6 +225,9 @@ class AuditLog:
             ),
             "swarm_round_id": meta.get("swarm_round_id", ""),
             "local_data_fingerprint": meta.get("local_data_fingerprint", ""),
+            "signed": signed,
+            "signature_valid": sig_valid,
+            "public_key_hex": meta.get("public_key_hex", ""),
         }
         return self.record(event_type, round_id, contributor_id, details)
 

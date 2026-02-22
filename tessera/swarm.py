@@ -735,7 +735,10 @@ def swarm_metadata(
     return meta
 
 
-def validate_for_swarm(token: TesseraToken) -> Tuple[bool, str]:
+def validate_for_swarm(
+    token: TesseraToken,
+    require_signature: bool = False,
+) -> Tuple[bool, str]:
     """
     Quick-check whether a token has the required swarm fields.
 
@@ -744,9 +747,16 @@ def validate_for_swarm(token: TesseraToken) -> Tuple[bool, str]:
         2. custom_metadata contains non-empty 'contributor_id'
         3. custom_metadata contains non-empty 'local_data_fingerprint'
         4. uhs_vector is non-empty
+        5. (optional) Ed25519 signature is present and valid
+
+    Args:
+        token: The token to validate.
+        require_signature: If True, token must carry a valid Ed25519 signature.
+            Tokens without a signature are rejected. Default False for
+            backwards compatibility with unsigned tokens.
 
     Returns:
-        (True, "") if valid, (False, reason) if not.
+        (True, "ok") if valid, (False, reason) if not.
     """
     meta = token.custom_metadata or {}
 
@@ -761,6 +771,13 @@ def validate_for_swarm(token: TesseraToken) -> Tuple[bool, str]:
 
     if not token.uhs_vector or len(token.uhs_vector) == 0:
         return False, "UHS vector is empty."
+
+    if require_signature:
+        from .signing import verify_token_signature
+
+        ok, reason = verify_token_signature(token)
+        if not ok:
+            return False, f"Signature validation failed: {reason}"
 
     return True, "ok"
 

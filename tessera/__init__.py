@@ -72,6 +72,21 @@ from .privacy import DifferentialPrivacy
 from .gates import ProjectionType, ProjectionHint
 from .binary import TBFSerializer, QuantType
 from .registry import AnchorRegistry
+from .signing import (
+    generate_keypair,
+    sign_token,
+    verify_token_signature,
+    is_signed,
+    strip_signature,
+    private_key_to_pem,
+    private_key_from_pem,
+    public_key_to_hex,
+    public_key_from_hex,
+    save_private_key,
+    load_private_key,
+    SIGNATURE_KEY,
+    PUBLIC_KEY_HEX_KEY,
+)
 
 __all__ = [
     # Fingerprinting
@@ -145,4 +160,18 @@ __all__ = [
     "QuantType",
     # Registry
     "AnchorRegistry",
+    # Signing & Authentication
+    "generate_keypair",
+    "sign_token",
+    "verify_token_signature",
+    "is_signed",
+    "strip_signature",
+    "private_key_to_pem",
+    "private_key_from_pem",
+    "public_key_to_hex",
+    "public_key_from_hex",
+    "save_private_key",
+    "load_private_key",
+    "SIGNATURE_KEY",
+    "PUBLIC_KEY_HEX_KEY",
 ]
