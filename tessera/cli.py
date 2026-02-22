@@ -313,7 +313,9 @@ def _cmd_swarm_credits(args):
                 data = json.load(f)
             from .credits import CreditsLedger
 
-            ledger = CreditsLedger.from_list(data if isinstance(data, list) else data.get("entries", []))
+            ledger = CreditsLedger.from_list(
+                data if isinstance(data, list) else data.get("entries", [])
+            )
         except Exception as e:
             print(f"Failed to load ledger: {e}", file=sys.stderr)
             return 1
