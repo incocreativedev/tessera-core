@@ -3,8 +3,8 @@ nixPkgs = ["python312"]
 
 [phases.install]
 cmds = [
-  "pip install --upgrade pip setuptools wheel",
-  "pip install -e '.[railway]'"
+  "python -m pip install --upgrade pip setuptools wheel",
+  "python -m pip install -e '.[railway]'"
 ]
 
 [start]
