@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -297,13 +298,35 @@ def _cmd_swarm_score(args):
 
 def _cmd_swarm_credits(args):
     """Show credits / free-usage tier for contributor."""
+    from pathlib import Path
 
-    # v1: no persistent ledger in CLI; show formula and placeholder
-    print(f"Contributor: {args.contributor_id}")
+    ledger_path = getattr(args, "ledger", None) or os.environ.get("TESSERA_CREDITS_LEDGER")
+    cid = args.contributor_id
+
+    if ledger_path:
+        path = Path(ledger_path)
+        if not path.exists():
+            print(f"Ledger file not found: {path}", file=sys.stderr)
+            return 1
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            from .credits import CreditsLedger
+
+            ledger = CreditsLedger.from_list(data if isinstance(data, list) else data.get("entries", []))
+        except Exception as e:
+            print(f"Failed to load ledger: {e}", file=sys.stderr)
+            return 1
+        total = ledger.get_contributor_credits(cid)
+        rolling = ledger.rolling_30_day_credits(cid)
+        print(f"Contributor: {cid}")
+        print(f"Total credits (all time): {total:.4f}")
+        print(f"Rolling 30-day credits:   {rolling:.4f}")
+        return 0
+
+    print(f"Contributor: {cid}")
+    print("No ledger specified. Use --ledger <path> or TESSERA_CREDITS_LEDGER to show credits.")
     print("Credits (v1): rolling 30-day sum of accepted utility scores.")
-    print(
-        "Use the Python API (credits.compute_credits, credits.rolling_30_day_credits) with a ledger for production."
-    )
     return 0
 
 
@@ -393,6 +416,12 @@ def main():
     p_cred = swarm_sub.add_parser("credits", help="Show credits for contributor")
     p_cred.add_argument(
         "--contributor-id", required=True, dest="contributor_id", help="Contributor ID"
+    )
+    p_cred.add_argument(
+        "--ledger",
+        default=None,
+        dest="ledger",
+        help="Path to credits ledger JSON (or set TESSERA_CREDITS_LEDGER)",
     )
 
     args = parser.parse_args()

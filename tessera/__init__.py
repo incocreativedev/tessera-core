@@ -23,7 +23,15 @@ from .mode_b import ModeBTransfer
 from .mode_c import ModeCTransfer
 from .mode_d import ModeDTransfer
 from .swap import SWAPProjection
-from .swarm import SwarmAggregator, AggregationStrategy, swarm_metadata, validate_for_swarm
+from .swarm import (
+    SwarmAggregator,
+    AggregationStrategy,
+    swarm_metadata,
+    validate_for_swarm,
+    aggregate_tokens,
+    score_token,
+    compute_credits,
+)
 from .policy import (
     accept_token,
     check_round_acceptance,
@@ -79,6 +87,9 @@ __all__ = [
     "AggregationStrategy",
     "swarm_metadata",
     "validate_for_swarm",
+    "aggregate_tokens",
+    "score_token",
+    "compute_credits",
     # Policy & Governance
     "accept_token",
     "check_round_acceptance",

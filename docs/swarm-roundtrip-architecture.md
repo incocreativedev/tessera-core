@@ -108,12 +108,13 @@ utility = 0.35*quality + 0.25*novelty + 0.20*freshness + 0.20*reliability
 
 | File | Purpose |
 |------|---------|
-| `tessera/swarm.py` | Protocol: submit, validate, aggregate_tokens, broadcast, score, credits; ML engine: `SwarmAggregator` (aggregate, aggregate_and_broadcast), `AggregationStrategy` enum |
+| `tessera/swarm.py` | Protocol: submit, validate, aggregate_tokens, score_token, compute_credits, broadcast, score; ML engine: `SwarmAggregator` (aggregate, aggregate_and_broadcast), `AggregationStrategy` enum |
 | `tessera/policy.py` | Governance and acceptance rules for central operator |
 | `tessera/credits.py` | Utility scoring and credit ledger |
 | `docs/swarm-roundtrip-architecture.md` | This spec, lifecycle, threat model |
 | `tests/test_swarm.py` | Round-trip orchestration and aggregation tests |
 | `tests/test_credits.py` | Scoring and credit assignment tests |
+| `tests/test_swarm_integration.py` | Full-cycle integration: submit → validate → score → aggregate → broadcast; lineage and credits |
 
 ---
 
