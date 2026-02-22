@@ -17,7 +17,7 @@ computes the closed-form KL divergence between them.
 """
 
 from collections import defaultdict
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -196,3 +196,95 @@ class DriftMeasure:
 
         kl = 0.5 * (term1 + term2 - d + term3)
         return max(0.0, float(kl))
+
+
+class WeightDriftMeasure:
+    """
+    Measures weight-space fidelity between transmitter and receiver.
+
+    Unlike DriftMeasure (which needs a dataloader), this class computes
+    drift directly from model parameters — no forward pass required.
+
+    Compares per-layer weight statistics (mean, std, Frobenius norm,
+    spectral norm, effective rank) between matched layers and returns
+    a composite drift score (lower = better).
+    """
+
+    def __init__(
+        self,
+        transmitter: nn.Module,
+        receiver: nn.Module,
+        device: str = "cpu",
+    ):
+        self.transmitter = transmitter
+        self.receiver = receiver
+        self.device = device
+
+    def compute(
+        self,
+        tx_layers: Optional[list] = None,
+        rx_layers: Optional[list] = None,
+        correspondences: Optional[List[Tuple[str, str]]] = None,
+    ) -> float:
+        """
+        Compute average weight-distribution drift across matched layers.
+
+        Args:
+            tx_layers: Transmitter layer names (auto-detect if None).
+            rx_layers: Receiver layer names (auto-detect if None).
+            correspondences: Pre-computed [(tx_layer, rx_layer)] pairs.
+                             If provided, overrides tx_layers/rx_layers.
+
+        Returns:
+            Composite drift score (lower = better). 0.0 = identical statistics.
+        """
+        from .weight_ops import compute_weight_stats
+
+        if correspondences:
+            tx_names = [p[0] for p in correspondences]
+            rx_names = [p[1] for p in correspondences]
+            tx_stats = compute_weight_stats(self.transmitter, tx_names)
+            rx_stats = compute_weight_stats(self.receiver, rx_names)
+            pairs = [(p[0], p[1]) for p in correspondences]
+        else:
+            tx_stats = compute_weight_stats(self.transmitter, tx_layers)
+            rx_stats = compute_weight_stats(self.receiver, rx_layers)
+            tx_keys = sorted(tx_stats.keys())
+            rx_keys = sorted(rx_stats.keys())
+            n = min(len(tx_keys), len(rx_keys))
+            pairs = list(zip(tx_keys[:n], rx_keys[:n]))
+
+        if not pairs:
+            logger.warning("No layer pairs for weight drift measurement.")
+            return 0.0
+
+        scores = []
+        for tx_name, rx_name in pairs:
+            if tx_name not in tx_stats or rx_name not in rx_stats:
+                continue
+            d = self._weight_distance(tx_stats[tx_name], rx_stats[rx_name])
+            scores.append(d)
+
+        drift = float(np.mean(scores)) if scores else 0.0
+        logger.info(f"  Weight drift: {drift:.6f} (across {len(scores)} layer pairs)")
+        return drift
+
+    @staticmethod
+    def _weight_distance(tx_stat, rx_stat) -> float:
+        """
+        Normalised distance between weight statistics of two layers.
+
+        Combines:
+          - Relative mean difference:     |μ_tx - μ_rx| / (|μ_tx| + ε)
+          - Relative std difference:      |σ_tx - σ_rx| / (σ_tx + ε)
+          - Spectral norm ratio deviation: |1 - sn_rx/sn_tx|
+          - Effective rank ratio deviation: |1 - er_rx/er_tx|
+        """
+        eps = 1e-8
+
+        mean_diff = abs(tx_stat.mean - rx_stat.mean) / (abs(tx_stat.mean) + eps)
+        std_diff = abs(tx_stat.std - rx_stat.std) / (tx_stat.std + eps)
+        sn_ratio = abs(1.0 - rx_stat.spectral_norm / (tx_stat.spectral_norm + eps))
+        er_ratio = abs(1.0 - rx_stat.effective_rank / (tx_stat.effective_rank + eps))
+
+        return float(np.mean([mean_diff, std_diff, sn_ratio, er_ratio]))
