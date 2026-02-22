@@ -1,0 +1,51 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tessera-api-ingress
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - tessera-api.example.com
+    secretName: tessera-api-tls
+  rules:
+  - host: tessera-api.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: tessera-api
+            port:
+              number: 80
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tessera-api-config
+  namespace: default
+spec:
+  app.conf: |
+    [app]
+    log_level=info
+    environment=production
+    max_workers=4
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tessera-api-secrets
+  namespace: default
+  type: Opaque
+stringData:
+  # Add secrets here as needed
+  # Example: api_key: your-secret-key

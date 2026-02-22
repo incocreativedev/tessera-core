@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  tessera-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tessera-api
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      LOG_LEVEL: info
+    volumes:
+      - ./tessera:/app/tessera
+      - ./examples:/app/examples
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # Optional: Redis cache service (can be added for caching)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: tessera-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+  #   restart: unless-stopped
+
+# volumes:
+#   redis_data:
