@@ -41,7 +41,9 @@ def linear_cka(X: np.ndarray, Y: np.ndarray) -> float:
         CKA similarity in [0, 1]. 1.0 = identical representations, 0.0 = unrelated.
     """
     if X.shape[0] != Y.shape[0]:
-        raise ValueError(f"X and Y must have the same number of samples; got {X.shape[0]} vs {Y.shape[0]}")
+        raise ValueError(
+            f"X and Y must have the same number of samples; got {X.shape[0]} vs {Y.shape[0]}"
+        )
 
     # Center the activations (remove mean)
     X = X - X.mean(axis=0, keepdims=True)
@@ -288,9 +290,7 @@ class LayerCorrespondence:
         tx_acts = collect_layer_activations(
             self.transmitter, dataloader, tx_layer_names, self.device
         )
-        rx_acts = collect_layer_activations(
-            self.receiver, dataloader, rx_layer_names, self.device
-        )
+        rx_acts = collect_layer_activations(self.receiver, dataloader, rx_layer_names, self.device)
 
         if not tx_acts or not rx_acts:
             logger.warning("No activations collected — returning empty correspondence.")
@@ -322,8 +322,6 @@ class LayerCorrespondence:
         tx_acts = collect_layer_activations(
             self.transmitter, dataloader, tx_layer_names, self.device
         )
-        rx_acts = collect_layer_activations(
-            self.receiver, dataloader, rx_layer_names, self.device
-        )
+        rx_acts = collect_layer_activations(self.receiver, dataloader, rx_layer_names, self.device)
 
         return compute_cka_matrix(tx_acts, rx_acts)

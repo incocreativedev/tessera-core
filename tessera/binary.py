@@ -56,6 +56,11 @@ TRAILER_SIZE = 36  # 32-byte HMAC-SHA256 + 4-byte CRC-32C
 MIME_TYPE = "application/vnd.tessera.token+binary"
 FILE_EXTENSION = ".tbf"
 
+# Maximum TBF file size (256 MB). Prevents memory-DoS via maliciously large files.
+MAX_TBF_FILE_BYTES = 256 * 1024 * 1024
+# Maximum metadata section size (1 MB). Guards msgpack parsing against DoS.
+MAX_META_BYTES = 1 * 1024 * 1024
+
 
 class QuantType(IntEnum):
     """Quantisation type for the vector payload."""
@@ -408,6 +413,12 @@ class TBFSerializer:
             ValueError: On format errors, CRC mismatch, or HMAC failure.
         """
         filepath = Path(filepath)
+        file_size = filepath.stat().st_size
+        if file_size > MAX_TBF_FILE_BYTES:
+            raise ValueError(
+                f"TBF file is too large ({file_size:,} bytes > {MAX_TBF_FILE_BYTES:,} byte limit). "
+                "Refusing to load to prevent memory exhaustion."
+            )
         raw = filepath.read_bytes()
 
         if len(raw) < HEADER_SIZE + TRAILER_SIZE:
@@ -488,12 +499,22 @@ class TBFSerializer:
                     f"Body CRC mismatch: got {file_crc:#010x}, " f"expected {computed_crc:#010x}"
                 )
 
-        if has_hmac and hmac_key is not None:
+        if has_hmac:
+            if hmac_key is None:
+                raise ValueError(
+                    "This TBF file was saved with HMAC protection but no hmac_key was supplied. "
+                    "Provide the correct hmac_key to verify integrity, or the file cannot be loaded."
+                )
             expected_mac = hmac.new(hmac_key, file_body, hashlib.sha256).digest()
             if not hmac.compare_digest(file_hmac, expected_mac):
                 raise ValueError("HMAC verification failed — file may be tampered")
 
         # ── 4. Decode metadata ───────────────────────────────────────────
+        if meta_len > MAX_META_BYTES:
+            raise ValueError(
+                f"Metadata section is too large ({meta_len:,} bytes > {MAX_META_BYTES:,} byte limit). "
+                "Refusing to parse to prevent memory/CPU exhaustion."
+            )
         meta_bytes = raw[meta_start:meta_end]
         meta = msgpack.unpackb(meta_bytes, raw=False)
 
@@ -547,6 +568,12 @@ class TBFSerializer:
         Returns a dict with file metadata (useful for inspection/debugging).
         """
         filepath = Path(filepath)
+        file_size = filepath.stat().st_size
+        if file_size > MAX_TBF_FILE_BYTES:
+            raise ValueError(
+                f"TBF file is too large ({file_size:,} bytes > {MAX_TBF_FILE_BYTES:,} byte limit). "
+                "Refusing to load to prevent memory exhaustion."
+            )
         raw = filepath.read_bytes()
 
         if len(raw) < HEADER_SIZE:

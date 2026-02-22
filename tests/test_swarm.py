@@ -51,7 +51,7 @@ def make_swarm_token(round_id="R1", contributor_id="c1", dim=64):
 
 class TestSwarmMetadata:
     def test_swarm_metadata_keys(self):
-        meta = swarm_metadata("R1", "c1", "fp", {"drift": 0.1})
+        meta = swarm_metadata("R1", "c1", "fp", quality_signals={"drift": 0.1})
         assert meta[SWARM_ROUND_ID] == "R1"
         assert meta[CONTRIBUTOR_ID] == "c1"
         assert meta["local_data_fingerprint"] == "fp"
@@ -209,11 +209,10 @@ class TestSwarmAggregator:
         tokens = [make_swarm_token(contributor_id=f"c{i}", dim=32) for i in range(3)]
         for t in tokens:
             t.custom_metadata[AGGREGATION_WEIGHT] = 1.0
-        # SwarmAggregator needs a model; use a tiny placeholder (aggregate() only uses tokens)
         class DummyModel:
             pass
         agg = SwarmAggregator(DummyModel(), hub_dim=32)
-        vec = agg.aggregate(tokens, strategy=AggregationStrategy.MEAN)
+        vec = agg.aggregate_hub(tokens, method=AggregationStrategy.MEAN)
         expected = aggregate_tokens(tokens, method=AggregationStrategy.MEAN)
         np.testing.assert_allclose(vec, expected, atol=1e-5)
         assert vec.shape == (32,)

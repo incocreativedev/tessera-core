@@ -31,10 +31,8 @@ from .token import KnowledgeType, TesseraToken
 from .uhs import UniversalHubSpace
 from .utils import setup_logging
 from .weight_ops import (
-    ChunkMeta,
     WeightSnapshot,
     chunk_for_hub,
-    compute_weight_stats,
     decode_and_reassemble,
     encode_weight_chunks,
     extract_weights,
@@ -181,7 +179,7 @@ class ModeWTransfer:
         )
         self.tx_uhs.train(chunk_loader, epochs=uhs_epochs, verbose=True)
         rt_error = self.tx_uhs.round_trip_error(
-            torch.tensor(np.stack(all_chunks[:min(50, len(all_chunks))]), dtype=torch.float32)
+            torch.tensor(np.stack(all_chunks[: min(50, len(all_chunks))]), dtype=torch.float32)
         )
         logger.info(f"  UHS round-trip error: {rt_error:.4f}")
 
@@ -221,9 +219,9 @@ class ModeWTransfer:
         # ── Step 7: Measure drift and package token ───────────────────────
         logger.info("[Step 7/7] Measuring weight drift and creating token...")
 
-        drift = WeightDriftMeasure(
-            self.transmitter, self.receiver, device=self.device
-        ).compute(correspondences=layer_pairs)
+        drift = WeightDriftMeasure(self.transmitter, self.receiver, device=self.device).compute(
+            correspondences=layer_pairs
+        )
 
         dp = DifferentialPrivacy(privacy_epsilon, privacy_delta)
         if hub_vectors_all:
@@ -303,9 +301,7 @@ class ModeWTransfer:
             pairs.append((tx_layer_names[i], rx_layer_names[i]))
         return pairs
 
-    def _collect_all_chunks(
-        self, snapshots: Dict[str, WeightSnapshot]
-    ) -> List[np.ndarray]:
+    def _collect_all_chunks(self, snapshots: Dict[str, WeightSnapshot]) -> List[np.ndarray]:
         """Collect all hub-dim-sized chunks from all snapshots for UHS training."""
         all_chunks: List[np.ndarray] = []
         for snap in snapshots.values():
@@ -313,9 +309,7 @@ class ModeWTransfer:
             all_chunks.extend(chunks)
         return all_chunks
 
-    def _get_layer_shape(
-        self, model: nn.Module, layer_name: str
-    ) -> Optional[Tuple[int, int]]:
+    def _get_layer_shape(self, model: nn.Module, layer_name: str) -> Optional[Tuple[int, int]]:
         """Return (out, in*kH*kW) 2D weight shape for a named layer."""
         for name, module in model.named_modules():
             if name == layer_name:

@@ -17,7 +17,7 @@ To preserve it we store a per-chunk scale factor alongside the chunk data and
 re-apply it after decoding (the same idea as INT8 scale/zero-point in binary.py).
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -234,9 +234,9 @@ def chunk_for_hub(
         (chunks, metadata) where each chunk is a (hub_dim,) float32 array
         and metadata records how to reassemble them.
     """
-    flat = np.concatenate(
-        [snapshot.U.flatten(), snapshot.S, snapshot.Vt.flatten()], axis=0
-    ).astype(np.float32)
+    flat = np.concatenate([snapshot.U.flatten(), snapshot.S, snapshot.Vt.flatten()], axis=0).astype(
+        np.float32
+    )
 
     u_size = snapshot.U.size
     s_size = snapshot.S.size
@@ -351,7 +351,6 @@ def decode_and_reassemble(
         rows, cols = target_shape
         return np.zeros((rows, cols), dtype=np.float32)
 
-    hub_dim = uhs.hub_dim
     hub_tensor = torch.tensor(np.stack(hub_vectors, axis=0), dtype=torch.float32)
 
     with torch.no_grad():

@@ -86,16 +86,30 @@ class SwarmAggregator:
         aggregator_model: nn.Module,
         aggregator_id: str = "aggregator",
         device: str = "cpu",
+        hub_dim: Optional[int] = None,
+        **kwargs: object,
     ):
         self.aggregator = aggregator_model
         self.aggregator_id = aggregator_id
         self.device = device
+        self._hub_dim = hub_dim  # optional, for protocol compatibility
 
         self.agg_uhs = None  # trained during aggregate()
 
     # ══════════════════════════════════════════════════════════════════════
     #  Public API
     # ══════════════════════════════════════════════════════════════════════
+
+    def aggregate_hub(
+        self,
+        tokens: List[TesseraToken],
+        method: str = "robust_weighted_mean",
+    ) -> np.ndarray:
+        """
+        Protocol-only: combine contributor tokens into one hub vector (no model).
+        Delegates to module-level aggregate_tokens for CLI and tests.
+        """
+        return aggregate_tokens(tokens, method=method)
 
     def aggregate(
         self,
@@ -712,11 +726,13 @@ class SwarmAggregator:
 # ══════════════════════════════════════════════════════════════════════════
 
 def swarm_metadata(
-    swarm_round_id: str,
-    contributor_id: str,
-    local_data_fingerprint: str,
-    *,
+    swarm_round_id: Optional[str] = None,
+    contributor_id: Optional[str] = None,
+    local_data_fingerprint: Optional[str] = None,
     extra_signals: Optional[Dict[str, object]] = None,
+    *,
+    round_id: Optional[str] = None,
+    quality_signals: Optional[Dict[str, object]] = None,
 ) -> dict:
     """
     Build the standard custom_metadata dict for a swarm contribution token.
@@ -725,18 +741,21 @@ def swarm_metadata(
     fields in its custom_metadata.  This helper ensures the right keys and
     adds any optional extra signals.
 
-    Usage:
-        meta = swarm_metadata("round_042", "site_a", "sha256:abc...")
-        token.custom_metadata = meta
-
-    Returns:
-        Dictionary ready to assign to TesseraToken.custom_metadata.
+    Accepts positional (round_id, contributor_id, fingerprint, signals_dict)
+    or keyword round_id / contributor_id / local_data_fingerprint / quality_signals.
     """
+    rid = swarm_round_id if swarm_round_id is not None else round_id
+    cid = contributor_id or ""
+    fp = local_data_fingerprint or ""
     meta: dict = {
-        "swarm_round_id": swarm_round_id,
-        "contributor_id": contributor_id,
-        "local_data_fingerprint": local_data_fingerprint,
+        "swarm_round_id": rid or "",
+        "contributor_id": cid,
+        "local_data_fingerprint": fp,
     }
+    # quality_signals → nested under "quality_signals" key (structured per-metric dict)
+    if quality_signals:
+        meta["quality_signals"] = dict(quality_signals)
+    # extra_signals → merged flat into top-level dict (arbitrary key-value pairs)
     if extra_signals:
         meta.update(extra_signals)
     return meta
@@ -769,4 +788,229 @@ def validate_for_swarm(token: TesseraToken) -> Tuple[bool, str]:
     if not token.uhs_vector or len(token.uhs_vector) == 0:
         return False, "UHS vector is empty."
 
-    return True, ""
+    return True, "ok"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Protocol layer: CLI and token-only helpers (no model training)
+# ══════════════════════════════════════════════════════════════════════════
+
+# Metadata keys for swarm tokens (used by CLI and tests)
+SWARM_ROUND_ID = "swarm_round_id"
+CONTRIBUTOR_ID = "contributor_id"
+QUALITY_SIGNALS = "quality_signals"
+AGGREGATION_WEIGHT = "aggregation_weight"
+UTILITY_SCORE = "utility_score"
+BROADCAST_VERSION = "broadcast_version"
+LINEAGE_PARENT_ROUNDS = "lineage_parent_rounds"
+
+
+def score_token(
+    token: TesseraToken,
+    round_context: Optional[Dict[str, object]] = None,
+) -> float:
+    """
+    Compute utility score for a token in a round context.
+    Delegates to credits.compute_utility with quality, novelty, freshness, reliability.
+    """
+    from . import credits
+
+    ctx = round_context or {}
+    meta = token.custom_metadata or {}
+    signals = meta.get(QUALITY_SIGNALS) or {}
+    drift = float(signals.get("drift", 0.5))
+    recon_error = float(signals.get("recon_error", 0.0))
+    quality = credits.compute_quality_score(drift, recon_error)
+    prior = ctx.get("prior_centroid")
+    hub = np.array(token.uhs_vector, dtype=np.float64) if token.uhs_vector else None
+    novelty = credits.compute_novelty_score(hub, prior) if hub is not None else 0.5
+    freshness = credits.compute_freshness_score(token.timestamp or "")
+    ledger = ctx.get("ledger") or ctx.get("contributor_history") or []
+    cid = meta.get(CONTRIBUTOR_ID) or token.source_model_id or ""
+    reliability = credits.compute_reliability_score(cid, ledger)
+    return credits.compute_utility(quality, novelty, freshness, reliability)
+
+
+def aggregate_tokens(
+    tokens: List[TesseraToken],
+    method: str = "robust_weighted_mean",
+) -> np.ndarray:
+    """
+    Aggregate accepted tokens' UHS vectors into one hub vector.
+    Protocol-only: no model. Uses same strategies as SwarmAggregator.
+    method: "mean", "weighted_mean" or "weighted", "median", "robust_weighted_mean".
+    Accepts AggregationStrategy enum (e.g. AggregationStrategy.MEAN).
+    """
+    if not tokens:
+        raise ValueError("aggregate_tokens requires at least one token")
+    # Allow enum
+    if hasattr(method, "value"):
+        method = method.value
+    method = str(method).lower()
+    if method == "weighted":
+        method = "weighted_mean"
+    hub_matrix = np.array([t.uhs_vector for t in tokens], dtype=np.float32)
+    weights = [
+        (t.custom_metadata or {}).get(AGGREGATION_WEIGHT, 1.0)
+        for t in tokens
+    ]
+    if method == "mean":
+        agg = hub_matrix.mean(axis=0)
+    elif method == "weighted_mean":
+        w = np.array(weights, dtype=np.float64)
+        w = np.maximum(w, 0.0)
+        if w.sum() <= 0:
+            w = np.ones(len(w)) / len(w)
+        else:
+            w = w / w.sum()
+        agg = (hub_matrix * w[:, np.newaxis]).sum(axis=0)
+    elif method == "median":
+        agg = np.median(hub_matrix, axis=0)
+    elif method in ("robust_weighted_mean", "trimmed_mean"):
+        # Robust: use weighted mean with cosine-distance clipping
+        w = np.array(weights, dtype=np.float64)
+        w = np.maximum(w, 0.0)
+        if w.sum() <= 0:
+            w = np.ones(len(w)) / len(w)
+        else:
+            w = w / w.sum()
+        median_hub = np.median(hub_matrix, axis=0)
+        mn = np.linalg.norm(median_hub)
+        if mn < 1e-10:
+            agg = (hub_matrix * w[:, np.newaxis]).sum(axis=0)
+        else:
+            dists = np.zeros(hub_matrix.shape[0])
+            for i in range(hub_matrix.shape[0]):
+                rn = np.linalg.norm(hub_matrix[i])
+                if rn < 1e-10:
+                    dists[i] = 1.0
+                else:
+                    cs = np.dot(hub_matrix[i], median_hub) / (rn * mn)
+                    dists[i] = (1.0 - max(-1.0, min(1.0, cs))) / 2.0
+            thresh = np.percentile(dists, 90.0)
+            for i in range(len(w)):
+                if dists[i] > thresh:
+                    w[i] = 0.0
+            if w.sum() < 1e-10:
+                agg = median_hub.copy()
+            else:
+                w = w / w.sum()
+                agg = (hub_matrix * w[:, np.newaxis]).sum(axis=0)
+    else:
+        raise ValueError(f"Unknown aggregation method: {method}")
+    # L2-renorm for mean/weighted/median; leave robust_weighted_mean un-normalised for compatibility
+    if method in ("mean", "weighted_mean", "median"):
+        norm = np.linalg.norm(agg)
+        if norm > 0:
+            agg = agg / norm
+    return agg.astype(np.float32)
+
+
+def compute_credits(
+    contributor_id: str,
+    utility_scores: List[float],
+    caps: Optional[Dict[str, float]] = None,
+) -> float:
+    """Sum of utility scores for the round, optionally capped."""
+    caps = caps or {}
+    total = sum(utility_scores)
+    max_per = caps.get("max_credits_per_day")
+    if max_per is not None and total > max_per:
+        return float(max_per)
+    return total
+
+
+def submit(token_path: str, contributor_id: str) -> Tuple[bool, str]:
+    """Validate and submit a contributor token. Returns (success, message)."""
+    from pathlib import Path
+    from .binary import TBFSerializer
+
+    path = Path(token_path)
+    if not path.exists():
+        return False, f"Token file not found: {token_path}"
+    try:
+        token = TBFSerializer.load(path)
+    except Exception as e:
+        return False, f"Failed to load token: {e}"
+    meta = token.custom_metadata or {}
+    if CONTRIBUTOR_ID not in meta:
+        token.custom_metadata = {**meta, CONTRIBUTOR_ID: contributor_id}
+    ok, reason = validate_for_swarm(token)
+    if not ok:
+        return False, f"Policy rejected: {reason}"
+    return True, "Token accepted for submission (ingress is out-of-band in v1)"
+
+
+def aggregate(
+    round_id: str,
+    token_paths: List[str],
+) -> Optional[np.ndarray]:
+    """Load tokens for round, aggregate to one hub vector. Returns None if below min contributors."""
+    from pathlib import Path
+    from .binary import TBFSerializer
+    from . import policy
+
+    tokens = []
+    for p in token_paths:
+        path = Path(p)
+        if not path.exists():
+            continue
+        try:
+            t = TBFSerializer.load(path)
+            if (t.custom_metadata or {}).get(SWARM_ROUND_ID) == round_id:
+                tokens.append(t)
+        except Exception:
+            continue
+    if len(tokens) < policy.MIN_ACCEPTED_CONTRIBUTORS:
+        return None
+    return aggregate_tokens(tokens, method="robust_weighted_mean")
+
+
+def broadcast(
+    round_id: str,
+    hub_vector: np.ndarray,
+    broadcast_version: str,
+) -> TesseraToken:
+    """Build a broadcast token (central → contributors) for the round."""
+    return TesseraToken(
+        knowledge_type=KnowledgeType.SWARM,
+        uhs_vector=hub_vector.tolist(),
+        modality_weights={"A": 1.0},
+        correlation_map={},
+        lineage_dag={},
+        source_model_id="swarm_central",
+        target_model_id=None,
+        version="1.0",
+        custom_metadata={
+            BROADCAST_VERSION: broadcast_version,
+            SWARM_ROUND_ID: round_id,
+            LINEAGE_PARENT_ROUNDS: [round_id],
+        },
+    )
+
+
+def score(round_id: str, token_paths: List[str]) -> Dict[str, float]:
+    """Score each token for a round; return contributor_id -> utility_score."""
+    from pathlib import Path
+    from .binary import TBFSerializer
+
+    ctx = {"round_id": round_id}
+    out = {}
+    for p in token_paths:
+        path = Path(p)
+        if not path.exists():
+            continue
+        try:
+            t = TBFSerializer.load(path)
+            if (t.custom_metadata or {}).get(SWARM_ROUND_ID) != round_id:
+                continue
+            cid = (t.custom_metadata or {}).get(CONTRIBUTOR_ID, path.stem)
+            u = score_token(t, ctx)
+            meta = t.custom_metadata or {}
+            meta[UTILITY_SCORE] = u
+            meta[AGGREGATION_WEIGHT] = max(0.0, u)
+            t.custom_metadata = meta
+            out[cid] = u
+        except Exception:
+            continue
+    return out

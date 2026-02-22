@@ -18,6 +18,7 @@ directory structure:
 """
 
 import json
+import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -27,6 +28,21 @@ from .uhs import EncoderMLP, DecoderMLP
 from .utils import setup_logging
 
 logger = setup_logging("tessera.registry")
+
+# Allowlist: anchor IDs may only contain alphanumerics, hyphens, underscores, and dots.
+# This prevents path traversal via separators, null bytes, or absolute paths.
+# The ID must start with an alphanumeric character so that "." and ".." are rejected.
+_ANCHOR_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-\.]{0,127}$")
+
+
+def _validate_anchor_id(anchor_id: str) -> None:
+    """Raise ValueError if anchor_id contains path-traversal characters."""
+    if not _ANCHOR_ID_RE.match(anchor_id):
+        raise ValueError(
+            f"Invalid anchor_id {anchor_id!r}. "
+            "IDs must start with an alphanumeric character and contain only "
+            "alphanumerics, hyphens, underscores, and dots (max 128 chars)."
+        )
 
 
 class AnchorRegistry:
@@ -85,7 +101,16 @@ class AnchorRegistry:
             decoder: Trained DecoderMLP.
             metadata: Optional metadata dict.
         """
+        _validate_anchor_id(anchor_id)
         anchor_dir = self.anchors_dir / anchor_id
+        # Confirm the resolved path is still inside anchors_dir (defence-in-depth).
+        anchor_dir = anchor_dir.resolve()
+        anchors_root = self.anchors_dir.resolve()
+        if not str(anchor_dir).startswith(str(anchors_root) + "/"):
+            raise ValueError(
+                f"Resolved anchor path {anchor_dir!r} escapes the registry root. "
+                "Refusing to write outside the registry directory."
+            )
         anchor_dir.mkdir(parents=True, exist_ok=True)
 
         # Save weights
@@ -128,14 +153,25 @@ class AnchorRegistry:
 
         Raises:
             KeyError: If anchor_id is not registered.
+            ValueError: If the stored path in the registry index escapes the registry root.
         """
+        _validate_anchor_id(anchor_id)
+
         if anchor_id not in self._index["anchors"]:
             raise KeyError(
                 f"Anchor '{anchor_id}' not found in registry. " f"Available: {self.list()}"
             )
 
         info = self._index["anchors"][anchor_id]
-        anchor_dir = Path(info["path"])
+        # Reconstruct the anchor directory from anchors_dir + anchor_id rather than
+        # trusting the stored path, which could have been tampered with.
+        anchor_dir = (self.anchors_dir / anchor_id).resolve()
+        anchors_root = self.anchors_dir.resolve()
+        if not str(anchor_dir).startswith(str(anchors_root) + "/"):
+            raise ValueError(
+                f"Stored anchor path for {anchor_id!r} would escape the registry root. "
+                "The registry index may have been tampered with."
+            )
         d_model = info["d_model"]
         hub_dim = info.get("hub_dim", 2048)
 

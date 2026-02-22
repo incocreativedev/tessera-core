@@ -1,9 +1,8 @@
 """
-tessera.mode_b — Mode B (Behavioural) knowledge transfer orchestrator.
+tessera.mode_c — Mode C (Compressed) knowledge transfer orchestrator.
 
-Mode B matches model outputs / logit distributions rather than internal
-activations or weights, making it suitable for black-box knowledge distillation
-where internal layer access is unavailable.
+Mode C applies aggressive quantisation and structured pruning to produce
+compact tokens optimised for bandwidth-constrained edge deployment.
 
 Status: Planned for v0.2.0. This stub exposes the public API surface so that
         imports in __init__.py resolve. Calling execute() raises NotImplementedError.
@@ -17,15 +16,15 @@ from torch.utils.data import DataLoader
 from .token import TesseraToken
 from .utils import setup_logging
 
-logger = setup_logging("tessera.mode_b")
+logger = setup_logging("tessera.mode_c")
 
 
-class ModeBTransfer:
+class ModeCTransfer:
     """
-    Mode B (Behavioural) knowledge transfer — planned for v0.2.0.
+    Mode C (Compressed) knowledge transfer — planned for v0.2.0.
 
-    Transfers knowledge by aligning the output distributions (logits / softmax)
-    of the transmitter and receiver on shared reference data.
+    Produces highly compressed tokens (INT8 / structured pruning) suitable
+    for transmission to resource-constrained receivers.
     """
 
     def __init__(
@@ -53,9 +52,8 @@ class ModeBTransfer:
         privacy_epsilon: float = 1.0,
         privacy_delta: float = 1e-5,
     ) -> TesseraToken:
-        """Execute Mode B transfer (not yet implemented)."""
+        """Execute Mode C transfer (not yet implemented)."""
         raise NotImplementedError(
-            "Mode B (Behavioural) transfer is planned for v0.2.0. "
-            "Use ModeATransfer for activation-based transfer or "
-            "ModeWTransfer for weight-based transfer."
+            "Mode C (Compressed) transfer is planned for v0.2.0. "
+            "Use ModeATransfer or ModeWTransfer in the meantime."
         )

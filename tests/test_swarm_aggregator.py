@@ -463,7 +463,7 @@ class TestValidateForSwarm:
         token = self._make_valid_token()
         ok, reason = validate_for_swarm(token)
         assert ok is True
-        assert reason == ""
+        assert reason == "ok"
 
     def test_missing_round_id_fails(self):
         token = self._make_valid_token()

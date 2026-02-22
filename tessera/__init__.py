@@ -33,7 +33,9 @@ from .credits import (
     compute_quality_score, compute_novelty_score,
     compute_freshness_score, compute_reliability_score, compute_utility,
 )
-from .drift import DriftMeasure
+from .correspondence import LayerCorrespondence, linear_cka
+from .weight_ops import WeightSnapshot, WeightStats, extract_weights, svd_compress, compute_weight_stats
+from .drift import DriftMeasure, WeightDriftMeasure
 from .privacy import DifferentialPrivacy
 from .gates import ProjectionType, ProjectionHint
 from .binary import TBFSerializer, QuantType
@@ -78,8 +80,17 @@ __all__ = [
     "compute_freshness_score",
     "compute_reliability_score",
     "compute_utility",
+    # Correspondence & weight ops
+    "LayerCorrespondence",
+    "linear_cka",
+    "WeightSnapshot",
+    "WeightStats",
+    "extract_weights",
+    "svd_compress",
+    "compute_weight_stats",
     # Measurement
     "DriftMeasure",
+    "WeightDriftMeasure",
     # Privacy
     "DifferentialPrivacy",
     # Projections
