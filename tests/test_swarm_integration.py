@@ -5,10 +5,7 @@ Full-cycle swarm integration test per spec: submit → validate → score
 Simulates multiple contributors (min 5 for policy), no actual model training.
 """
 
-import os
 import numpy as np
-import pytest
-from pathlib import Path
 
 from tessera.token import TesseraToken, KnowledgeType
 from tessera.swarm import (
@@ -26,7 +23,6 @@ from tessera.swarm import (
     BROADCAST_VERSION,
     LINEAGE_PARENT_ROUNDS,
 )
-from tessera import policy
 from tessera.policy import accept_token, check_round_acceptance, MIN_ACCEPTED_CONTRIBUTORS
 from tessera.credits import CreditsLedger
 from tessera.binary import TBFSerializer
