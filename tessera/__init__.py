@@ -49,6 +49,16 @@ from .credits import (
     compute_reliability_score,
     compute_utility,
 )
+from .audit import (
+    AuditEntry,
+    AuditLog,
+    AuditEventType,
+    generate_ai_bom,
+    export_compliance_package,
+    MAX_COMPOSED_EPSILON,
+    MAX_COMPOSED_DELTA,
+    DEFAULT_RETENTION_DAYS,
+)
 from .correspondence import LayerCorrespondence, linear_cka
 from .weight_ops import (
     WeightSnapshot,
@@ -105,6 +115,15 @@ __all__ = [
     "compute_freshness_score",
     "compute_reliability_score",
     "compute_utility",
+    # Audit & Compliance
+    "AuditEntry",
+    "AuditLog",
+    "AuditEventType",
+    "generate_ai_bom",
+    "export_compliance_package",
+    "MAX_COMPOSED_EPSILON",
+    "MAX_COMPOSED_DELTA",
+    "DEFAULT_RETENTION_DAYS",
     # Correspondence & weight ops
     "LayerCorrespondence",
     "linear_cka",
