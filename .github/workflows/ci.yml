@@ -49,6 +49,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+          pip install "black==25.11.0"  # pin to match local; must be last to override
 
       - name: Check formatting
         run: black --check tessera/ tests/
