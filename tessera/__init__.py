@@ -72,6 +72,7 @@ from .privacy import DifferentialPrivacy
 from .gates import ProjectionType, ProjectionHint
 from .binary import TBFSerializer, QuantType
 from .registry import AnchorRegistry
+from .mode_aq import ModeAQTransfer, QuantConfig, QuantTarget, QuantDecoderMLP, fake_quantize
 from .signing import (
     generate_keypair,
     sign_token,
@@ -86,6 +87,11 @@ from .signing import (
     load_private_key,
     SIGNATURE_KEY,
     PUBLIC_KEY_HEX_KEY,
+    ContributorIdentity,
+    SignedTokenEnvelope,
+    KeyStore,
+    FRESHNESS_TTL_SECONDS,
+    CLOCK_SKEW_TOLERANCE_SECONDS,
 )
 
 __all__ = [
@@ -160,7 +166,13 @@ __all__ = [
     "QuantType",
     # Registry
     "AnchorRegistry",
-    # Signing & Authentication
+    # Quantisation-Aware Transfer
+    "ModeAQTransfer",
+    "QuantConfig",
+    "QuantTarget",
+    "QuantDecoderMLP",
+    "fake_quantize",
+    # Signing & Authentication (functional API)
     "generate_keypair",
     "sign_token",
     "verify_token_signature",
@@ -174,4 +186,10 @@ __all__ = [
     "load_private_key",
     "SIGNATURE_KEY",
     "PUBLIC_KEY_HEX_KEY",
+    # Signing & Authentication (OO API)
+    "ContributorIdentity",
+    "SignedTokenEnvelope",
+    "KeyStore",
+    "FRESHNESS_TTL_SECONDS",
+    "CLOCK_SKEW_TOLERANCE_SECONDS",
 ]

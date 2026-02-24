@@ -87,6 +87,39 @@ def val_loader():
     return DataLoader(TensorDataset(X, y), batch_size=16, shuffle=False)
 
 
+class TinyEdgeModel(nn.Module):
+    """Minimal model simulating an edge deployment target (d=32, 1 layer)."""
+
+    def __init__(self, d_model=32, vocab_size=128, num_classes=2):
+        super().__init__()
+        self.d_model = d_model
+        self.embedding = nn.Embedding(vocab_size, d_model)
+        self.layers = nn.ModuleList(
+            [
+                nn.TransformerEncoderLayer(
+                    d_model=d_model,
+                    nhead=max(1, d_model // 16),
+                    dim_feedforward=d_model * 2,
+                    batch_first=True,
+                    dropout=0.0,
+                )
+            ]
+        )
+        self.head = nn.Linear(d_model, num_classes)
+
+    def forward(self, x):
+        x = self.embedding(x)
+        for layer in self.layers:
+            x = layer(x)
+        return self.head(x.mean(dim=1))
+
+
+@pytest.fixture
+def tiny_edge():
+    """Tiny edge model (32d, 1 layer) for quantisation transfer tests."""
+    return TinyEdgeModel(d_model=32)
+
+
 @pytest.fixture
 def sample_uhs_vector():
     """A sample 2048-dim UHS vector."""
