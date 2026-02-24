@@ -55,6 +55,8 @@ class AuditEventType(Enum):
     POLICY_VIOLATION = "policy_violation"
     CREDIT_AWARDED = "credit_awarded"
     CONFORMITY_CHECK = "conformity_check"
+    SIGNATURE_VERIFIED = "signature_verified"
+    SIGNATURE_FAILED = "signature_failed"
 
 
 # ══════════════════════════════════════════════════════════════════════════

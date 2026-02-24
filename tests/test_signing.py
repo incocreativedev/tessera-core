@@ -18,9 +18,14 @@ from tessera.signing import (
     load_private_key,
     SIGNATURE_KEY,
     PUBLIC_KEY_HEX_KEY,
+    ContributorIdentity,
+    SignedTokenEnvelope,
+    KeyStore,
+    FRESHNESS_TTL_SECONDS,
+    CLOCK_SKEW_TOLERANCE_SECONDS,
 )
 from tessera.swarm import swarm_metadata, validate_for_swarm
-from tessera.audit import AuditLog
+from tessera.audit import AuditLog, AuditEventType
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
@@ -314,3 +319,342 @@ class TestAuditSigningIntegration:
         entry = log.record_token_submission("r1", token, accepted=False, reason="tampered")
         assert entry.details["signed"] is True
         assert entry.details["signature_valid"] is False
+
+    def test_signature_verified_event_type_exists(self):
+        assert AuditEventType.SIGNATURE_VERIFIED.value == "signature_verified"
+
+    def test_signature_failed_event_type_exists(self):
+        assert AuditEventType.SIGNATURE_FAILED.value == "signature_failed"
+
+    def test_audit_log_can_record_signature_verified(self):
+        log = AuditLog()
+        entry = log.record(
+            AuditEventType.SIGNATURE_VERIFIED,
+            "r1",
+            contributor_id="site_a",
+            details={"public_key_hex": "ab" * 32},
+        )
+        assert entry.event_type == AuditEventType.SIGNATURE_VERIFIED
+
+    def test_audit_log_can_record_signature_failed(self):
+        log = AuditLog()
+        entry = log.record(
+            AuditEventType.SIGNATURE_FAILED,
+            "r1",
+            contributor_id="evil_site",
+            details={"reason": "tampered payload"},
+        )
+        assert entry.event_type == AuditEventType.SIGNATURE_FAILED
+
+
+# ── ContributorIdentity ──────────────────────────────────────────────────
+
+
+class TestContributorIdentity:
+    def test_generate_creates_identity_with_keys(self):
+        identity = ContributorIdentity.generate("site_a")
+        assert identity.contributor_id == "site_a"
+        assert identity.private_key is not None
+        assert identity.public_key is not None
+
+    def test_public_key_hex_is_64_chars(self):
+        identity = ContributorIdentity.generate("site_a")
+        assert len(identity.public_key_hex()) == 64
+
+    def test_from_pem_roundtrip(self):
+        identity = ContributorIdentity.generate("site_a")
+        pem = identity.private_key_pem()
+        restored = ContributorIdentity.from_pem("site_a", pem)
+        assert restored.public_key_hex() == identity.public_key_hex()
+        assert restored.contributor_id == "site_a"
+
+    def test_from_public_only_has_no_private_key(self):
+        identity = ContributorIdentity.generate("site_a")
+        verifier = ContributorIdentity.from_public_only("site_a", identity.public_key_hex())
+        assert verifier.private_key is None
+        assert verifier.public_key_hex() == identity.public_key_hex()
+
+    def test_sign_produces_envelope(self):
+        identity = ContributorIdentity.generate("site_a")
+        token = _make_token()
+        envelope = identity.sign(token)
+        assert isinstance(envelope, SignedTokenEnvelope)
+        assert envelope.signer_id == "site_a"
+        assert len(envelope.signature_hex) == 128
+        assert len(envelope.signer_public_key_hex) == 64
+
+    def test_sign_does_not_mutate_token(self):
+        identity = ContributorIdentity.generate("site_a")
+        token = _make_token()
+        original_meta = dict(token.custom_metadata)
+        identity.sign(token)
+        assert token.custom_metadata == original_meta
+
+    def test_verify_with_correct_identity(self):
+        identity = ContributorIdentity.generate("site_a")
+        token = _make_token()
+        envelope = identity.sign(token)
+        ok, reason = identity.verify(envelope)
+        assert ok is True
+        assert reason == "ok"
+
+    def test_verify_with_public_only_identity(self):
+        signer = ContributorIdentity.generate("site_a")
+        verifier = ContributorIdentity.from_public_only("site_a", signer.public_key_hex())
+        token = _make_token()
+        envelope = signer.sign(token)
+        ok, reason = verifier.verify(envelope)
+        assert ok is True
+
+    def test_sign_raises_without_private_key(self):
+        identity = ContributorIdentity.generate("site_a")
+        verifier = ContributorIdentity.from_public_only("site_a", identity.public_key_hex())
+        token = _make_token()
+        with pytest.raises(RuntimeError, match="no private key"):
+            verifier.sign(token)
+
+    def test_save_and_load(self, tmp_path):
+        identity = ContributorIdentity.generate("site_a")
+        path = str(tmp_path / "site_a.pem")
+        identity.save(path)
+        loaded = ContributorIdentity.load("site_a", path)
+        assert loaded.public_key_hex() == identity.public_key_hex()
+
+    def test_repr_contains_contributor_id(self):
+        identity = ContributorIdentity.generate("my_site")
+        r = repr(identity)
+        assert "my_site" in r
+        assert "has_private=True" in r
+
+    def test_different_identities_different_keys(self):
+        a = ContributorIdentity.generate("site_a")
+        b = ContributorIdentity.generate("site_b")
+        assert a.public_key_hex() != b.public_key_hex()
+
+
+# ── SignedTokenEnvelope ──────────────────────────────────────────────────
+
+
+class TestSignedTokenEnvelope:
+    def test_self_verify_passes(self):
+        identity = ContributorIdentity.generate("site_a")
+        token = _make_token()
+        envelope = identity.sign(token)
+        ok, reason = envelope.verify()
+        assert ok is True
+
+    def test_tampered_uhs_vector_detected(self):
+        identity = ContributorIdentity.generate("site_a")
+        token = _make_token()
+        envelope = identity.sign(token)
+        token.uhs_vector[0] += 999.0  # tamper after signing
+        ok, reason = envelope.verify()
+        assert ok is False
+        assert "tampered" in reason.lower() or "failed" in reason.lower()
+
+    def test_tampered_contributor_id_detected(self):
+        identity = ContributorIdentity.generate("honest")
+        token = _make_token(contributor_id="honest")
+        envelope = identity.sign(token)
+        token.custom_metadata["contributor_id"] = "evil"
+        ok, reason = envelope.verify()
+        assert ok is False
+
+    def test_tampered_round_id_detected(self):
+        identity = ContributorIdentity.generate("site_a")
+        token = _make_token(round_id="round_001")
+        envelope = identity.sign(token)
+        token.custom_metadata["swarm_round_id"] = "round_999"
+        ok, reason = envelope.verify()
+        assert ok is False
+
+    def test_malformed_signature_hex_fails(self):
+        identity = ContributorIdentity.generate("site_a")
+        token = _make_token()
+        envelope = identity.sign(token)
+        bad_env = SignedTokenEnvelope(
+            token=token,
+            signature_hex="notvalidhex!!",
+            signer_id="site_a",
+            signer_public_key_hex=envelope.signer_public_key_hex,
+        )
+        ok, reason = bad_env.verify()
+        assert ok is False
+
+    def test_to_dict_contains_expected_keys(self):
+        identity = ContributorIdentity.generate("site_a")
+        token = _make_token()
+        envelope = identity.sign(token)
+        d = envelope.to_dict()
+        assert d["signer_id"] == "site_a"
+        assert len(d["signature_hex"]) == 128
+        assert len(d["signer_public_key_hex"]) == 64
+
+    def test_signing_is_deterministic(self):
+        """Ed25519 is deterministic: same key + same token = same signature."""
+        identity = ContributorIdentity.generate("site_a")
+        token = _make_token()
+        env1 = identity.sign(token)
+        env2 = identity.sign(token)
+        assert env1.signature_hex == env2.signature_hex
+
+
+# ── KeyStore ─────────────────────────────────────────────────────────────
+
+
+class TestKeyStore:
+    def test_register_and_is_registered(self):
+        ks = KeyStore()
+        identity = ContributorIdentity.generate("site_a")
+        ks.register("site_a", identity.public_key)
+        assert ks.is_registered("site_a")
+
+    def test_unregistered_is_not_registered(self):
+        ks = KeyStore()
+        assert not ks.is_registered("unknown")
+
+    def test_revoke_removes_registration(self):
+        ks = KeyStore()
+        identity = ContributorIdentity.generate("site_a")
+        ks.register("site_a", identity.public_key)
+        ks.revoke("site_a")
+        assert not ks.is_registered("site_a")
+        assert ks.is_revoked("site_a")
+
+    def test_re_register_clears_revocation(self):
+        ks = KeyStore()
+        identity = ContributorIdentity.generate("site_a")
+        ks.register("site_a", identity.public_key)
+        ks.revoke("site_a")
+        ks.register("site_a", identity.public_key)
+        assert ks.is_registered("site_a")
+        assert not ks.is_revoked("site_a")
+
+    def test_verify_envelope_passes_valid(self):
+        ks = KeyStore()
+        identity = ContributorIdentity.generate("site_a")
+        ks.register("site_a", identity.public_key)
+        token = _make_token()
+        envelope = identity.sign(token)
+        ok, reason = ks.verify_envelope(envelope)
+        assert ok is True
+
+    def test_verify_envelope_fails_unregistered(self):
+        ks = KeyStore()
+        identity = ContributorIdentity.generate("site_a")
+        token = _make_token()
+        envelope = identity.sign(token)
+        ok, reason = ks.verify_envelope(envelope)
+        assert ok is False
+        assert "not registered" in reason.lower()
+
+    def test_verify_envelope_fails_revoked(self):
+        ks = KeyStore()
+        identity = ContributorIdentity.generate("site_a")
+        ks.register("site_a", identity.public_key)
+        ks.revoke("site_a")
+        token = _make_token()
+        envelope = identity.sign(token)
+        ok, reason = ks.verify_envelope(envelope)
+        assert ok is False
+        assert "revoked" in reason.lower()
+
+    def test_verify_envelope_fails_key_substitution(self):
+        """Attacker registers their key but uses the legitimate signer_id."""
+        ks = KeyStore()
+        legit = ContributorIdentity.generate("site_a")
+        attacker = ContributorIdentity.generate("site_a")
+        ks.register("site_a", legit.public_key)
+        token = _make_token()
+        # Attacker signs with their key but claims to be "site_a"
+        attacker_env = attacker.sign(token)
+        ok, reason = ks.verify_envelope(attacker_env)
+        assert ok is False
+        assert "mismatch" in reason.lower()
+
+    def test_verify_envelope_fails_tampered_token(self):
+        ks = KeyStore()
+        identity = ContributorIdentity.generate("site_a")
+        ks.register("site_a", identity.public_key)
+        token = _make_token()
+        envelope = identity.sign(token)
+        token.uhs_vector[0] += 42.0  # tamper
+        ok, reason = ks.verify_envelope(envelope)
+        assert ok is False
+
+    def test_verify_token_embedded_sig(self):
+        """KeyStore.verify_token works with sign_token() (functional API)."""
+        ks = KeyStore()
+        priv, pub = generate_keypair()
+        ks.register("site_a", pub)
+        token = _make_token()
+        sign_token(token, priv)
+        ok, reason = ks.verify_token(token)
+        assert ok is True
+
+    def test_verify_token_wrong_contributor_id_fails(self):
+        ks = KeyStore()
+        priv, pub = generate_keypair()
+        ks.register("site_a", pub)
+        token = _make_token(contributor_id="site_a")
+        sign_token(token, priv)
+        ok, reason = ks.verify_token(token, expected_contributor_id="site_b")
+        assert ok is False
+        assert "mismatch" in reason.lower()
+
+    def test_register_hex_works(self):
+        ks = KeyStore()
+        identity = ContributorIdentity.generate("site_a")
+        ks.register_hex("site_a", identity.public_key_hex())
+        assert ks.is_registered("site_a")
+
+    def test_len_counts_active_contributors(self):
+        ks = KeyStore()
+        for i in range(3):
+            identity = ContributorIdentity.generate(f"site_{i}")
+            ks.register(f"site_{i}", identity.public_key)
+        assert len(ks) == 3
+        ks.revoke("site_0")
+        assert len(ks) == 2
+
+    def test_contributor_ids_excludes_revoked(self):
+        ks = KeyStore()
+        a = ContributorIdentity.generate("site_a")
+        b = ContributorIdentity.generate("site_b")
+        ks.register("site_a", a.public_key)
+        ks.register("site_b", b.public_key)
+        ks.revoke("site_a")
+        assert "site_b" in ks.contributor_ids
+        assert "site_a" not in ks.contributor_ids
+
+    def test_json_roundtrip(self):
+        ks = KeyStore()
+        identity = ContributorIdentity.generate("site_a")
+        ks.register("site_a", identity.public_key)
+        ks.revoke("site_x")  # revoke a contributor that was never registered
+        json_str = ks.to_json()
+        restored = KeyStore.from_json(json_str)
+        assert restored.is_registered("site_a")
+        assert not restored.is_registered("unknown")
+
+    def test_get_public_key_returns_correct_key(self):
+        ks = KeyStore()
+        identity = ContributorIdentity.generate("site_a")
+        ks.register("site_a", identity.public_key)
+        recovered = ks.get_public_key("site_a")
+        assert public_key_to_hex(recovered) == identity.public_key_hex()
+
+    def test_get_public_key_returns_none_for_unregistered(self):
+        ks = KeyStore()
+        assert ks.get_public_key("unknown") is None
+
+    def test_repr_shows_counts(self):
+        ks = KeyStore()
+        identity = ContributorIdentity.generate("site_a")
+        ks.register("site_a", identity.public_key)
+        r = repr(ks)
+        assert "registered=1" in r
+
+    def test_freshness_constants_are_positive(self):
+        assert FRESHNESS_TTL_SECONDS > 0
+        assert CLOCK_SKEW_TOLERANCE_SECONDS > 0
